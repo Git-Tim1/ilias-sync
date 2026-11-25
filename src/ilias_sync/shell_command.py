@@ -9,7 +9,10 @@ import sysconfig
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TypedDict
+
+from typing_extensions import (
+    TypedDict,  # Pydantic braucht unter Python 3.11 diese Variante
+)
 
 from . import paths
 
