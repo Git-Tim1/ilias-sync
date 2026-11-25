@@ -18,11 +18,19 @@ EXTENSIONS = [
     "docx",
     "ipynb",
     "java",
+    "jpeg",
+    "jpg",
+    "md",
+    "odp",
+    "ods",
+    "odt",
     "pdf",
     "png",
     "ppt",
     "pptx",
     "py",
+    "rtf",
+    "tex",
     "txt",
     "xls",
     "xlsx",
@@ -35,7 +43,7 @@ class Config:
     base_url: str = BASE_URL
     login_url: str = BASE_URL + "login.php?client_id=uk&cmd=force_login&lang=de"
     download_dir: Path = field(
-        default_factory=lambda: Path.home() / "Documents" / "ILIAS Downloads"
+        default_factory=lambda: Path.home() / "Documents" / "Uni"
     )
     local_download_dir: Path | None = None
     auto_discover_current_semester: bool = True

@@ -1,11 +1,13 @@
 // Einstellungen: Konfiguration, Zugangsdaten, Zeitplan, Ordner.
-import { h, button, iconButton, prefs } from '../util.js';
+import { h, button, iconButton, REVEAL_LABEL, hasNativeFilePicker, chooseFile, openInBrowser } from '../util.js';
 import { icon } from '../icons.js';
 import { settingRow, switchInput, nextId, chipsInput, showFieldErrors, clearFieldErrors } from '../components.js';
 import { errorMessage } from '../api.js';
-import { folderInput, credentialsBlock, sessionBlock, scheduleBlock } from './forms.js';
+import { folderInput, credentialsBlock, sessionBlock, scheduleBlock, browserBlock } from './forms.js';
 
-const EXTENSION_SUGGESTIONS = ['pdf', 'pptx', 'docx', 'xlsx', 'zip', 'txt', 'py', 'ipynb', 'java', 'png', 'jpg', 'mp4'];
+const EXTENSION_SUGGESTIONS = ['pdf', 'pptx', 'docx', 'xlsx', 'zip', 'txt', 'md', 'py', 'ipynb', 'java', 'tex', 'odt', 'png', 'jpg', 'mp4'];
+// Diese Felder bleiben beim Zurücksetzen erhalten – sie sind persönlich, nicht „Standard“.
+const PERSONAL_KEYS = new Set(['download_dir', 'local_download_dir', 'courses', 'keychain_service']);
 const CONFIG_KEYS = [
   'download_dir',
   'local_download_dir',
@@ -23,6 +25,16 @@ const CONFIG_KEYS = [
   'base_url',
   'login_url',
 ];
+
+const onOff = (v) => (v ? 'an' : 'aus');
+
+/** Hängt „Standard: …“ an eine Beschreibung an. */
+function withDefault(text, defaults, key, format = (v) => v) {
+  if (!defaults || !(key in defaults)) return text;
+  const value = defaults[key];
+  const shown = typeof value === 'boolean' ? onOff(value) : format(value);
+  return h('span', {}, text, ' ', h('span', { class: 'default-hint' }, `Standard: ${shown}`));
+}
 
 function section(title, iconName, ...children) {
   const id = nextId('sec');
@@ -117,20 +129,36 @@ export function mount(root, ctx) {
   const body = h('div', { class: 'settings', 'aria-busy': 'true' }, h('p', { class: 'muted' }, 'Lade Einstellungen …'));
   root.append(header, body);
 
-  Promise.all([api.getConfig(), api.getCredentials(), api.getSchedule()])
-    .then(([config, credentials, schedule]) => build(config, credentials, schedule))
-    .catch((err) => {
-      body.replaceChildren(h('p', { class: 'empty' }, `Einstellungen konnten nicht geladen werden: ${errorMessage(err)}`));
-    });
+  let buildCleanups = [];
+  function load() {
+    return Promise.all([
+      api.getConfig(),
+      api.getCredentials(),
+      api.getSchedule(),
+      api.getConfigDefaults().catch(() => null),
+      api.getPaths().catch(() => null),
+    ])
+      .then((data) => {
+        buildCleanups.forEach((fn) => fn());
+        buildCleanups = [];
+        build(...data);
+      })
+      .catch((err) => {
+        body.replaceChildren(h('p', { class: 'empty' }, `Einstellungen konnten nicht geladen werden: ${errorMessage(err)}`));
+      });
+  }
+  load();
+  cleanups.push(() => buildCleanups.forEach((fn) => fn()));
 
-  function build(config, credentials, schedule) {
+  function build(config, credentials, schedule, defaults, runtimePaths) {
+    const cleanups = buildCleanups;
     let saved = structuredClone(config);
     const errors = new Map();
     const fields = {};
     const ids = Object.fromEntries(CONFIG_KEYS.map((k) => [k, nextId(k)]));
 
     // ---- Ordner
-    const dl = folderInput({ id: ids.download_dir, value: config.download_dir, placeholder: '~/Documents/Uni/ILIAS', which: 'download', ctx });
+    const dl = folderInput({ id: ids.download_dir, value: config.download_dir, placeholder: defaults?.download_dir ?? '~/Documents/Uni', which: 'download', ctx });
     const local = folderInput({
       id: ids.local_download_dir,
       value: config.local_download_dir ?? '',
@@ -166,7 +194,7 @@ export function mount(root, ctx) {
 
     // ---- Downloads
     const exts = chipsInput({ id: ids.file_extensions, values: config.file_extensions ?? [], suggestions: EXTENSION_SUGGESTIONS, onchange: markDirty });
-    const maxDepth = h('input', { id: ids.max_depth, class: 'input input-number', type: 'number', min: '1', step: '1', value: String(config.max_depth ?? 10) });
+    const maxDepth = h('input', { id: ids.max_depth, class: 'input input-number', type: 'number', min: '1', step: '1', value: String(config.max_depth ?? 10), placeholder: String(defaults?.max_depth ?? 10) });
     const overwrite = switchInput({ id: ids.overwrite, checked: config.overwrite });
     fields.file_extensions = { get: () => exts.value, set: (v) => (exts.value = v ?? []) };
     fields.max_depth = {
@@ -183,7 +211,7 @@ export function mount(root, ctx) {
     fields.auto_login = { get: () => autoLogin.checked, set: (v) => (autoLogin.checked = Boolean(v)) };
     const fallback = switchInput({ id: ids.open_login_window_on_failure, checked: config.open_login_window_on_failure });
     const notifications = switchInput({ id: ids.notifications, checked: config.notifications });
-    const keychain = h('input', { id: ids.keychain_service, class: 'input mono', type: 'text', value: config.keychain_service, spellcheck: 'false' });
+    const keychain = h('input', { id: ids.keychain_service, class: 'input mono', type: 'text', value: config.keychain_service, spellcheck: 'false', placeholder: defaults?.keychain_service ?? '' });
     fields.open_login_window_on_failure = { get: () => fallback.checked, set: (v) => (fallback.checked = Boolean(v)) };
     fields.notifications = { get: () => notifications.checked, set: (v) => (notifications.checked = Boolean(v)) };
     fields.keychain_service = { get: () => keychain.value.trim(), set: (v) => (keychain.value = v ?? '') };
@@ -192,8 +220,8 @@ export function mount(root, ctx) {
     cleanups.push(session.destroy);
 
     // ---- Erweitert
-    const baseUrl = h('input', { id: ids.base_url, class: 'input mono', type: 'url', value: config.base_url ?? '', spellcheck: 'false' });
-    const loginUrl = h('input', { id: ids.login_url, class: 'input mono', type: 'url', value: config.login_url ?? '', spellcheck: 'false' });
+    const baseUrl = h('input', { id: ids.base_url, class: 'input mono', type: 'url', value: config.base_url ?? '', spellcheck: 'false', placeholder: defaults?.base_url ?? '' });
+    const loginUrl = h('input', { id: ids.login_url, class: 'input mono', type: 'url', value: config.login_url ?? '', spellcheck: 'false', placeholder: defaults?.login_url ?? '' });
     fields.base_url = { get: () => baseUrl.value.trim(), set: (v) => (baseUrl.value = v ?? '') };
     fields.login_url = { get: () => loginUrl.value.trim(), set: (v) => (loginUrl.value = v ?? '') };
 
@@ -221,6 +249,21 @@ export function mount(root, ctx) {
       saveState.textContent = n ? (n === 1 ? '1 ungespeicherte Änderung' : `${n} ungespeicherte Änderungen`) : 'Alle Änderungen gespeichert';
       saveBtn.disabled = !n;
       discardBtn.disabled = !n;
+    }
+    async function restoreDefaults() {
+      let defaults;
+      try {
+        defaults = await api.getConfigDefaults();
+      } catch (err) {
+        ctx.toast(errorMessage(err), { tone: 'danger' });
+        return;
+      }
+      for (const [k, f] of Object.entries(fields)) {
+        if (!PERSONAL_KEYS.has(k) && k in defaults) f.set(structuredClone(defaults[k]));
+      }
+      clearFieldErrors(errors);
+      markDirty();
+      ctx.toast('Standardwerte eingetragen. Zum Übernehmen „Speichern“ klicken.', { tone: 'neutral' });
     }
     function discard() {
       for (const [k, f] of Object.entries(fields)) f.set(structuredClone(saved[k]));
@@ -258,15 +301,29 @@ export function mount(root, ctx) {
       'details',
       {},
       h('summary', {}, 'Erweitert'),
-      row('keychain_service', 'Schlüsselbund-Dienst', keychain, { stacked: true, description: 'Wählt den Eintrag im System-Schlüsselbund. Änderungen gelten nach dem Speichern der Einstellungen.' }),
+      row('keychain_service', 'Schlüsselbund-Dienst', keychain, {
+        stacked: true,
+        description: withDefault('Wählt den Eintrag im System-Schlüsselbund. Änderungen gelten nach dem Speichern der Einstellungen.', defaults, 'keychain_service', (v) => `„${v}“`),
+      }),
     );
 
     const advanced = h(
       'details',
       { class: 'card settings-card advanced' },
       h('summary', { class: 'card-head' }, h('h2', {}, h('span', { class: 'section-icon' }, icon('settings', { size: 16 })), 'Erweitert'), icon('chevronDown', { size: 16, className: 'chev' })),
-      row('base_url', 'ILIAS-Adresse', baseUrl, { stacked: true, description: 'Nur ändern, wenn du ILIAS Sync mit einer anderen Hochschule nutzt.' }),
+      row('base_url', 'ILIAS-Adresse', baseUrl, { stacked: true, description: 'Nur ändern, wenn du ILIAS Sync mit einer anderen Hochschule nutzt. Standard: Universität zu Köln.' }),
       row('login_url', 'Login-Adresse', loginUrl, { stacked: true }),
+      h(
+        'div',
+        { class: 'setting-row' },
+        h(
+          'div',
+          { class: 'setting-text' },
+          h('span', { class: 'setting-label' }, 'Standardwerte'),
+          h('p', { class: 'setting-desc' }, 'Setzt Dateitypen, Ordnertiefe, Semester, Anmeldung und ILIAS-Adresse zurück. Ordner, Kurse und Zugangsdaten bleiben erhalten.'),
+        ),
+        h('div', { class: 'setting-control' }, button('Zurücksetzen', { variant: 'secondary', size: 'sm', onclick: () => restoreDefaults() })),
+      ),
       h(
         'div',
         { class: 'setting-row' },
@@ -277,22 +334,267 @@ export function mount(root, ctx) {
           button('Erneut starten', {
             variant: 'secondary',
             size: 'sm',
-            onclick: () => {
-              prefs.set('setupDone', false);
+            onclick: async () => {
+              await ctx.api.resetSetup().catch(() => {});
               ctx.navigate('einrichtung');
             },
           }),
         ),
       ),
+      ...advancedTools(),
       h('p', { class: 'muted small version' }, `ILIAS Sync ${ctx.store.status?.version ?? ''}${ctx.api.mock ? ' · Demo-Modus' : ''}`),
     );
+
+    // ---- Erweitert: Werkzeuge, die es sonst nur im Terminal gibt
+    function advancedTools() {
+      const browser = browserBlock(ctx);
+      cleanups.push(browser.destroy);
+      return [
+        shellCommandCard(),
+        h('div', { class: 'subsection' }, h('h3', { class: 'subhead' }, 'Browser-Komponente'), h('p', { class: 'setting-desc' }, 'ILIAS Sync nutzt ein eigenes Chromium für Anmeldung und Downloads.'), browser.el),
+        h('div', { class: 'subsection' }, h('h3', { class: 'subhead' }, 'Speicherorte'), pathsList()),
+        h('div', { class: 'subsection' }, h('h3', { class: 'subhead' }, 'Konfigurationsdatei'), yamlViewer(), importer()),
+        h(
+          'div',
+          { class: 'setting-row' },
+          h(
+            'div',
+            { class: 'setting-text' },
+            h('span', { class: 'setting-label' }, 'Im Browser öffnen'),
+            h('p', { class: 'setting-desc' }, 'Öffnet diese Oberfläche zusätzlich in deinem Standardbrowser.'),
+          ),
+          h('div', { class: 'setting-control' }, button('Im Browser öffnen', { icon: 'globe', variant: 'secondary', size: 'sm', onclick: () => openInBrowser(location.href) })),
+        ),
+      ];
+    }
+
+    function shellCommandCard() {
+      const status = h('p', { class: 'setting-desc', 'aria-live': 'polite' }, 'Lade Status …');
+      const path = h('p', { class: 'setting-desc mono browser-path', hidden: true });
+      const line = h('pre', { class: 'code yaml-view', tabindex: '0' });
+      const copy = button('Kopieren', {
+        icon: 'copy', variant: 'ghost', size: 'sm',
+        onclick: async () => {
+          try {
+            await navigator.clipboard.writeText(line.textContent);
+            ctx.toast('PATH-Zeile kopiert.', { tone: 'success' });
+          } catch {
+            const range = document.createRange();
+            range.selectNodeContents(line);
+            getSelection().removeAllRanges();
+            getSelection().addRange(range);
+            ctx.toast('PATH-Zeile markiert. Kopiere sie mit dem Tastenkürzel.');
+          }
+        },
+      });
+      const hint = h('div', { hidden: true },
+        h('p', { class: 'setting-desc' }, 'Falls der Befehl im Terminal fehlt, ergänze diese Zeile in ~/.zprofile (zsh) und öffne ein neues Terminal.'),
+        line, copy,
+      );
+      const examples = h('p', { class: 'setting-desc', hidden: true },
+        h('code', {}, 'ilias-sync --help'), ' · ', h('code', {}, 'ilias-sync run --dry-run'),
+      );
+      let installed = false;
+      const change = button('Installieren', {
+        variant: 'secondary', size: 'sm', hidden: true,
+        onclick: async () => {
+          change.disabled = true;
+          try {
+            render(await (installed ? api.uninstallShellCommand() : api.installShellCommand()));
+          } catch (err) {
+            ctx.toast(errorMessage(err), { tone: 'danger' });
+          } finally {
+            change.disabled = false;
+          }
+        },
+      });
+      function render(info) {
+        installed = info.installed;
+        status.textContent = info.supported ? (installed ? 'Installiert' : 'Nicht installiert') : info.instructions;
+        path.textContent = info.path ?? '';
+        path.hidden = !info.path;
+        change.textContent = installed ? 'Entfernen' : 'Installieren';
+        change.hidden = !info.supported;
+        line.textContent = info.path_line ?? '';
+        hint.hidden = !installed || !info.path_line;
+        examples.hidden = !info.supported;
+      }
+      api.getShellCommand().then(render).catch((err) => { status.textContent = errorMessage(err); });
+      return h('section', { class: 'subsection' }, h('h3', { class: 'subhead' }, 'Terminal-Befehl'),
+        h('div', { class: 'browser-head' }, h('div', {}, status, path), change), hint, examples,
+      );
+    }
+
+    function pathsList() {
+      const labels = { config: ['Konfiguration', 'config.yaml mit allen Einstellungen'], data: ['Daten', 'Verlauf, Browser-Profil und Sitzung'], logs: ['Protokolle', 'sync.log für die Fehlersuche'] };
+      if (!runtimePaths) return h('p', { class: 'muted small' }, 'Speicherorte konnten nicht geladen werden.');
+      return h(
+        'ul',
+        { class: 'path-list' },
+        Object.entries(labels).map(([key, [label, desc]]) => {
+          const info = runtimePaths[key];
+          if (!info) return null;
+          return h(
+            'li',
+            { class: 'path-item' },
+            h(
+              'div',
+              { class: 'path-text' },
+              h('span', { class: 'setting-label' }, label, info.exists ? null : h('span', { class: 'badge badge-soft' }, 'noch nicht angelegt')),
+              h('span', { class: 'setting-desc' }, desc),
+              h('code', { class: 'path-value', title: info.path }, info.path),
+            ),
+            button(REVEAL_LABEL, {
+              icon: 'reveal',
+              variant: 'secondary',
+              size: 'sm',
+              'aria-label': `${label}: ${REVEAL_LABEL}`,
+              onclick: async () => {
+                try {
+                  await api.revealPath(key);
+                } catch (err) {
+                  ctx.toast(errorMessage(err), { tone: 'danger' });
+                }
+              },
+            }),
+          );
+        }),
+      );
+    }
+
+    function yamlViewer() {
+      const pre = h('pre', { class: 'code yaml-view', tabindex: '0', 'aria-label': 'Konfiguration als YAML' });
+      const wrap = h('div', { class: 'yaml-wrap', hidden: true }, pre);
+      const copyBtn = button('Kopieren', {
+        icon: 'copy',
+        variant: 'ghost',
+        size: 'sm',
+        onclick: async () => {
+          try {
+            await navigator.clipboard.writeText(pre.textContent);
+            ctx.toast('YAML in die Zwischenablage kopiert.', { tone: 'success', timeout: 2000 });
+          } catch {
+            const range = document.createRange();
+            range.selectNodeContents(pre);
+            getSelection().removeAllRanges();
+            getSelection().addRange(range);
+            ctx.toast('Text markiert – mit ⌘C kopieren.', { tone: 'neutral' });
+          }
+        },
+      });
+      copyBtn.hidden = true;
+      const toggle = button('Als YAML anzeigen', {
+        icon: 'file',
+        variant: 'secondary',
+        size: 'sm',
+        'aria-expanded': 'false',
+        onclick: async () => {
+          const open = wrap.hidden;
+          if (open) {
+            try {
+              const res = await api.getConfigYaml();
+              pre.textContent = res.yaml;
+            } catch (err) {
+              ctx.toast(errorMessage(err), { tone: 'danger' });
+              return;
+            }
+          }
+          wrap.hidden = !open;
+          copyBtn.hidden = !open;
+          toggle.setAttribute('aria-expanded', String(open));
+          toggle.querySelector('.btn-label').textContent = open ? 'YAML ausblenden' : 'Als YAML anzeigen';
+        },
+      });
+      return h(
+        'div',
+        { class: 'yaml-block' },
+        h(
+          'div',
+          { class: 'setting-row' },
+          h('div', { class: 'setting-text' }, h('span', { class: 'setting-label' }, 'Gespeicherte Einstellungen ansehen'), h('p', { class: 'setting-desc' }, 'Zeigt die wirksame Konfiguration (wie „ilias-sync config show“). Enthält keine Passwörter.')),
+          h('div', { class: 'setting-control setting-control-row' }, copyBtn, toggle),
+        ),
+        wrap,
+      );
+    }
+
+    function importer() {
+      const errors = new Map();
+      const id = nextId('import');
+      const input = h('input', { id, class: 'input input-path', type: 'text', placeholder: '/Pfad/zur/alten/config.yaml', spellcheck: 'false', autocomplete: 'off' });
+      const pick = button('Datei wählen …', {
+        icon: 'folder',
+        variant: 'secondary',
+        size: 'sm',
+        onclick: async () => {
+          const path = await chooseFile(input.value);
+          if (path) {
+            input.value = path;
+            ask();
+          }
+        },
+      });
+      pick.hidden = !hasNativeFilePicker();
+      const onReady = () => (pick.hidden = !hasNativeFilePicker());
+      window.addEventListener('pywebviewready', onReady);
+      cleanups.push(() => window.removeEventListener('pywebviewready', onReady));
+      const confirmBox = h('div', { class: 'confirm', hidden: true, role: 'alertdialog', 'aria-label': 'Konfiguration importieren?' });
+      const importBtn = button('Importieren …', { icon: 'upload', variant: 'secondary', size: 'sm', onclick: () => ask() });
+
+      function ask() {
+        clearFieldErrors(errors);
+        if (!input.value.trim()) {
+          showFieldErrors(errors, { import: 'Bitte den Pfad zur alten config.yaml angeben.' });
+          return;
+        }
+        confirmBox.hidden = false;
+        confirmBox.replaceChildren(
+          h('span', {}, 'Alle Einstellungen werden durch die Werte aus der Datei ersetzt. Zugangsdaten im Schlüsselbund bleiben erhalten.'),
+          button('Abbrechen', { variant: 'secondary', size: 'sm', onclick: () => ((confirmBox.hidden = true), importBtn.focus()) }),
+          button('Ersetzen', { variant: 'primary', size: 'sm', onclick: () => run() }),
+        );
+        confirmBox.querySelector('.btn-secondary').focus();
+      }
+
+      async function run() {
+        confirmBox.hidden = true;
+        try {
+          await api.importConfig(input.value.trim());
+          ctx.toast('Alte Konfiguration übernommen.', { tone: 'success' });
+          await load();
+        } catch (err) {
+          const fields = err.fields ? { import: Object.values(err.fields).join(' ') } : { import: errorMessage(err) };
+          showFieldErrors(errors, fields);
+        }
+      }
+      input.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') {
+          ev.preventDefault();
+          ask();
+        }
+      });
+      return h(
+        'div',
+        { class: 'import-block' },
+        settingRow({
+          label: 'Alte config.yaml importieren',
+          description: 'Übernimmt Ordner, Kurse und Dateitypen aus einer früheren Installation (wie „ilias-sync config import“).',
+          control: h('div', { class: 'path-field' }, input, pick, importBtn),
+          forId: id,
+          stacked: true,
+          errorKey: 'import',
+          errors,
+        }),
+        confirmBox,
+      );
+    }
 
     body.removeAttribute('aria-busy');
     body.replaceChildren(
       section(
         'Ordner',
         'folder',
-        row('download_dir', 'Download-Ordner', dl.el, { stacked: true, description: 'Hier legt ILIAS Sync die Kursmaterialien ab – pro Kurs ein Unterordner.' }),
+        row('download_dir', 'Download-Ordner', dl.el, { stacked: true, description: withDefault('Hier legt ILIAS Sync die Kursmaterialien ab – pro Kurs ein Unterordner.', defaults, 'download_dir') }),
         row('local_download_dir', 'Zusätzliche lokale Kopie', local.el, {
           stacked: true,
           description: 'Optional. Neue Dateien werden zusätzlich hierhin kopiert, z. B. in einen iCloud- oder Nextcloud-Ordner.',
@@ -301,22 +603,25 @@ export function mount(root, ctx) {
       section(
         'Kurse & Semester',
         'layers',
-        row('auto_discover_current_semester', 'Kurse automatisch erkennen', autoDiscover, { description: 'Findet alle Kurse, in denen du im aktuellen Semester Mitglied bist.' }),
-        row('semester_filter', 'Semester', semester, { description: '„auto“ wählt das laufende Semester. Oder fest, z. B. „WS26/27“ oder „SoSe27“.' }),
-        row('include_configured_courses', 'Manuelle Kurse zusätzlich laden', includeConfigured, { description: 'Lädt die unten eingetragenen Kurse auch bei automatischer Erkennung.' }),
+        row('auto_discover_current_semester', 'Kurse automatisch erkennen', autoDiscover, { description: withDefault('Findet alle Kurse, in denen du im aktuellen Semester Mitglied bist.', defaults, 'auto_discover_current_semester') }),
+        row('semester_filter', 'Semester', semester, { description: withDefault('„auto“ wählt das laufende Semester. Oder fest, z. B. „WS26/27“ oder „SoSe27“.', defaults, 'semester_filter', (v) => `„${v}“`) }),
+        row('include_configured_courses', 'Manuelle Kurse zusätzlich laden', includeConfigured, { description: withDefault('Lädt die unten eingetragenen Kurse auch bei automatischer Erkennung.', defaults, 'include_configured_courses') }),
         settingRow({ label: 'Manuelle Kurse', description: 'Kurse, die nicht automatisch gefunden werden – mit Link aus ILIAS („Permanenter Link“).', control: courses.el, stacked: true, errorKey: 'courses', errors }),
       ),
       section(
         'Downloads',
         'download',
-        row('file_extensions', 'Dateitypen', exts.el, { stacked: true, description: 'Nur Dateien mit diesen Endungen werden geladen.' }),
-        row('max_depth', 'Maximale Ordnertiefe', maxDepth, { description: 'Wie tief Unterordner in ILIAS durchsucht werden (mindestens 1).' }),
-        row('overwrite', 'Geänderte Dateien überschreiben', overwrite, { description: 'Aus: Vorhandene Dateien bleiben unverändert.' }),
+        row('file_extensions', 'Dateitypen', exts.el, {
+          stacked: true,
+          description: withDefault('Nur Dateien mit diesen Endungen werden geladen.', defaults, 'file_extensions', (v) => `${v.length} gängige Typen (PDF, Office, Code, Bilder …)`),
+        }),
+        row('max_depth', 'Maximale Ordnertiefe', maxDepth, { description: withDefault('Wie tief Unterordner in ILIAS durchsucht werden (mindestens 1).', defaults, 'max_depth') }),
+        row('overwrite', 'Geänderte Dateien überschreiben', overwrite, { description: withDefault('Aus: Vorhandene Dateien bleiben unverändert.', defaults, 'overwrite') }),
       ),
       section(
         'Anmeldung',
         'key',
-        row('auto_login', 'Automatisch neu anmelden', autoLogin, { description: 'Meldet sich mit den gespeicherten Zugangsdaten an, wenn die Sitzung abläuft.' }),
+        row('auto_login', 'Automatisch neu anmelden', autoLogin, { description: withDefault('Meldet sich mit den gespeicherten Zugangsdaten an, wenn die Sitzung abläuft.', defaults, 'auto_login') }),
         h('div', { class: 'subsection' }, h('h3', { class: 'subhead' }, 'Zugangsdaten'), creds.el, credentialAdvanced),
         h('div', { class: 'subsection' }, h('h3', { class: 'subhead' }, 'ILIAS-Sitzung'), session.el),
       ),
@@ -324,8 +629,10 @@ export function mount(root, ctx) {
         'Zeitplan',
         'calendar',
         scheduleBlock(ctx, schedule).el,
-        row('notifications', 'macOS-Mitteilungen', notifications, { description: 'Meldet neue Dateien oder eine erforderliche Anmeldung nach einem geplanten Lauf.' }),
-        row('open_login_window_on_failure', 'Login-Fenster bei abgelaufener Sitzung öffnen', fallback, { description: 'Öffnet bei einem geplanten Lauf in deiner grafischen macOS-Sitzung das ILIAS-Login und versucht den Sync nach der Anmeldung erneut.' }),
+        row('notifications', 'Mitteilungen', notifications, { description: withDefault('Meldet neue Dateien oder eine erforderliche Anmeldung nach einem geplanten Lauf.', defaults, 'notifications') }),
+        row('open_login_window_on_failure', 'Login-Fenster bei abgelaufener Sitzung öffnen', fallback, {
+          description: withDefault('Öffnet bei einem geplanten Lauf das ILIAS-Login und versucht den Sync nach der Anmeldung erneut.', defaults, 'open_login_window_on_failure'),
+        }),
       ),
       advanced,
       savebar,

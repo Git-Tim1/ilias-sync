@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ilias-sync"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Lokale Synchronisierung von ILIAS-Kursmaterialien"
 readme = "README.md"
 license = "MIT"
@@ -18,9 +18,14 @@ dependencies = [
 desktop = ["pywebview>=5"]
 dev = ["pytest", "httpx2", "ruff"]
 
+packaging = ["pyinstaller>=6.12", "build", "dmgbuild; sys_platform == 'darwin'"]
+
 [project.scripts]
 ilias-sync = "ilias_sync.cli:main"
 ilias-sync-desktop = "ilias_sync.desktop:main"
+
+[tool.hatch.version]
+path = "src/ilias_sync/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ilias_sync"]

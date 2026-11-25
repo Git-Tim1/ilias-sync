@@ -238,3 +238,33 @@ export async function chooseFolder(initial) {
     return null;
   }
 }
+
+/** Dateiauswahl (alte config.yaml) über das Desktop-Fenster, falls verfügbar. */
+export function hasNativeFilePicker() {
+  return Boolean(window.pywebview?.api?.choose_file);
+}
+
+export async function chooseFile(initial) {
+  if (!hasNativeFilePicker()) return null;
+  try {
+    return (await window.pywebview.api.choose_file(initial ?? null)) || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Öffnet die Oberfläche im Standardbrowser (im Desktop-Fenster über pywebview). */
+export async function openInBrowser(url = location.href) {
+  if (window.pywebview?.api?.open_in_browser) {
+    try {
+      if (await window.pywebview.api.open_in_browser(url)) return true;
+    } catch {
+      /* Fallback unten */
+    }
+  }
+  window.open(url, '_blank', 'noopener');
+  return true;
+}
+
+export const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+export const REVEAL_LABEL = IS_MAC ? 'Im Finder zeigen' : 'Im Ordner zeigen';

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import logging
 import os
@@ -16,6 +17,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import uvicorn
+import yaml
 from fastapi import Body, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
@@ -25,15 +27,23 @@ from pydantic import BaseModel, StrictBool
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException
 
-from . import __version__, auth, paths, schedule
+from . import __version__, auth, onboarding, paths, schedule, shell_command
 from .config import (
     DEFAULT_KEYCHAIN_SERVICE,
+    Config,
     ConfigError,
+    import_legacy_config,
     load_config,
     save_config,
     validate_config,
 )
-from .runner import AlreadyRunning, BrowserLock, SyncRunner, disk_log_handler
+from .runner import (
+    AlreadyRunning,
+    BrowserLock,
+    SyncOptions,
+    SyncRunner,
+    disk_log_handler,
+)
 
 LOGGER = logging.getLogger("ilias-sync")
 
@@ -44,9 +54,59 @@ class ApiError(Exception):
         self.body: dict[str, Any] = {"error": error, "message": message}
 
 
-class SyncRequest(BaseModel):
-    dry_run: StrictBool = False
-    course: str | None = None
+SYNC_FLAGS = SyncOptions.FLAGS
+SYNC_TEXT_FIELDS = {"course": "Kurs", "semester": "Semester"}
+MAX_TEXT_OPTION = 300
+
+
+def sync_options(body: Any) -> SyncOptions:
+    """Validate the body of ``POST /api/sync`` (the options of ``ilias-sync run``)."""
+    if body is None:
+        return SyncOptions()
+    if not isinstance(body, dict):
+        raise invalid_sync({"sync": "Bitte ein JSON-Objekt angeben."})
+    fields: dict[str, str] = {
+        str(key): "Unbekannte Option."
+        for key in body.keys() - {*SYNC_FLAGS, *SYNC_TEXT_FIELDS, "max_depth"}
+    }
+    values: dict[str, Any] = {}
+    for key in SYNC_FLAGS:
+        value = body.get(key, False)
+        if type(value) is not bool:
+            fields[key] = "Bitte true oder false angeben."
+        values[key] = value
+    for key, label in SYNC_TEXT_FIELDS.items():
+        value = body.get(key)
+        if isinstance(value, str):
+            value = value.strip() or None
+        if value is not None and (
+            not isinstance(value, str)
+            or len(value) > MAX_TEXT_OPTION
+            or any(ord(character) < 32 for character in value)
+        ):
+            fields[key] = f"{label}: Bitte einen einzeiligen Text angeben."
+        values[key] = value
+    depth = body.get("max_depth")
+    if depth is not None and (type(depth) is not int or not 1 <= depth <= 100):
+        fields["max_depth"] = "Bitte eine ganze Zahl von 1 bis 100 angeben."
+    values["max_depth"] = depth
+    if fields:
+        raise invalid_sync(fields)
+    return SyncOptions(**values)
+
+
+def invalid_sync(fields: dict[str, str]) -> ApiError:
+    error = ApiError(422, "invalid_sync_options", "Bitte prüfe die Sync-Optionen.")
+    error.body["fields"] = fields
+    return error
+
+
+class ImportRequest(BaseModel):
+    path: str
+
+
+class RevealRequest(BaseModel):
+    which: Literal["config", "data", "logs"]
 
 
 class PathRequest(BaseModel):
@@ -189,14 +249,14 @@ def create_app(runner: SyncRunner | None = None) -> FastAPI:
     credentials_lock = threading.Lock()
     presence_lock = threading.Lock()
     presence_token = object()
-    credentials_present = False
+    credentials_present: bool | None = None  # None: Schlüsselbund-Prüfung läuft noch
 
     def refresh_credentials(service: str) -> None:
         nonlocal presence_token, credentials_present
         token = object()
         with presence_lock:
             presence_token = token
-            credentials_present = False
+            credentials_present = None
 
         def probe() -> None:
             nonlocal credentials_present
@@ -237,7 +297,8 @@ def create_app(runner: SyncRunner | None = None) -> FastAPI:
             "current": current,
             "last_run": last_run,
             "session": session,
-            "credentials_configured": credentials_present,
+            "credentials_configured": bool(credentials_present),
+            "setup": onboarding.setup_state(credentials_present),
             "schedule": schedule.status(),
             "version": __version__,
         }
@@ -337,9 +398,8 @@ def create_app(runner: SyncRunner | None = None) -> FastAPI:
         return status()
 
     @app.post("/api/sync", status_code=202)
-    def start_sync(body: SyncRequest | None = None) -> dict[str, str]:
-        body = body or SyncRequest()
-        return {"run_id": runner.start(body.dry_run, body.course)}
+    def start_sync(body: Annotated[Any, Body()] = None) -> dict[str, str]:
+        return {"run_id": runner.start(sync_options(body))}
 
     @app.post("/api/sync/cancel")
     def cancel_sync() -> dict[str, bool]:
@@ -400,6 +460,85 @@ def create_app(runner: SyncRunner | None = None) -> FastAPI:
     @app.get("/api/config")
     def get_config() -> dict[str, Any]:
         return load_config().to_dict()
+
+    @app.get("/api/config/defaults")
+    def get_config_defaults() -> dict[str, Any]:
+        return Config().to_dict()
+
+    @app.get("/api/setup/suggestions")
+    def setup_suggestions() -> dict[str, Any]:
+        return {
+            "download_dirs": onboarding.folder_suggestions(),
+            "defaults": Config().to_dict(),
+        }
+
+    @app.post("/api/setup/complete")
+    def setup_complete() -> dict[str, bool]:
+        with config_lock:
+            if not paths.CONFIG.exists():
+                save_config(load_config())
+        return onboarding.mark_complete()
+
+    @app.post("/api/setup/reset")
+    def setup_reset() -> dict[str, bool]:
+        onboarding.reset()
+        return onboarding.setup_state(credentials_present)
+
+    @app.get("/api/config/yaml")
+    def get_config_yaml() -> dict[str, Any]:
+        config = load_config().to_dict()
+        return {
+            "path": str(paths.CONFIG),
+            "exists": paths.CONFIG.exists(),
+            "yaml": yaml.safe_dump(config, allow_unicode=True, sort_keys=False),
+        }
+
+    @app.post("/api/config/import")
+    def import_config(body: ImportRequest) -> dict[str, Any]:
+        try:
+            source = Path(body.path.strip()).expanduser()
+            if "\x00" in body.path or not source.is_absolute():
+                raise ValueError()
+        except (ValueError, RuntimeError):
+            raise ApiError(
+                422, "invalid_path", "Bitte einen absoluten Dateipfad angeben."
+            ) from None
+        if source.suffix.lower() not in {".yaml", ".yml"}:
+            raise ApiError(
+                422,
+                "invalid_path",
+                "Bitte eine YAML-Datei (.yaml oder .yml) auswählen.",
+            )
+        if not source.is_file():
+            raise ApiError(404, "file_not_found", "Die Datei wurde nicht gefunden.")
+        with config_lock:
+            previous = credential_service()
+            config = import_legacy_config(source)
+            if config.keychain_service != previous:
+                refresh_credentials(config.keychain_service)
+        return config.to_dict()
+
+    def runtime_paths() -> dict[str, Path]:
+        return {"config": paths.CONFIG, "data": paths.DATA, "logs": paths.LOGS}
+
+    @app.get("/api/paths")
+    def get_paths() -> dict[str, dict[str, Any]]:
+        return {
+            key: {"path": str(path), "exists": path.exists()}
+            for key, path in runtime_paths().items()
+        }
+
+    @app.post("/api/paths/reveal")
+    def reveal_path(body: RevealRequest) -> dict[str, bool]:
+        path = runtime_paths()[body.which]
+        if body.which == "config":
+            if path.is_file():
+                open_path(path, reveal=True)
+                return {"opened": True}
+            path = path.parent
+        path.mkdir(parents=True, exist_ok=True)
+        open_path(path)
+        return {"opened": True}
 
     @app.put("/api/config")
     def put_config(body: Annotated[Any, Body()] = None) -> dict[str, Any]:
@@ -516,6 +655,101 @@ def create_app(runner: SyncRunner | None = None) -> FastAPI:
         try:
             threading.Thread(target=login_worker, daemon=True).start()
         except BaseException:
+            lock.__exit__()
+            raise
+        return {"started": True}
+
+    @app.get("/api/shell-command")
+    def get_shell_command() -> shell_command.Status:
+        return shell_command.status()
+
+    @app.post("/api/shell-command/install")
+    def install_shell_command() -> shell_command.Status:
+        try:
+            return shell_command.install()
+        except (OSError, RuntimeError) as exc:
+            raise ApiError(422, "shell_command_install_failed", str(exc)) from exc
+
+    @app.post("/api/shell-command/uninstall")
+    def uninstall_shell_command() -> shell_command.Status:
+        try:
+            return shell_command.uninstall()
+        except OSError as exc:
+            raise ApiError(422, "shell_command_uninstall_failed", str(exc)) from exc
+
+    browser_install: dict[str, Any] = {"running": False, "error": None}
+    browser_lock = threading.Lock()
+
+    def browser_module() -> Any:
+        try:
+            return importlib.import_module(f"{__package__}.browser")
+        except ModuleNotFoundError as exc:
+            if exc.name != f"{__package__}.browser":
+                raise
+            raise ApiError(
+                503,
+                "browser_unavailable",
+                "Die Browser-Verwaltung ist in dieser Version nicht verfügbar.",
+            ) from None
+
+    @app.get("/api/browser")
+    def get_browser() -> dict[str, Any]:
+        module = browser_module()
+        with browser_lock:
+            installing = browser_install["running"]
+            error = browser_install["error"]
+        result = dict(module.status())
+        return {
+            "installed": bool(result.get("installed")),
+            "executable": result.get("executable"),
+            "installing": installing,
+            "error": error,
+        }
+
+    @app.post("/api/browser/install", status_code=202)
+    def install_browser() -> dict[str, bool]:
+        module = browser_module()
+        with browser_lock:
+            if browser_install["running"]:
+                raise ApiError(
+                    409,
+                    "already_installing",
+                    "Die Browser-Komponente wird bereits installiert.",
+                )
+            lock = BrowserLock(timeout=5)
+            lock.__enter__()
+            browser_install.update(running=True, error=None)
+
+        def install_worker() -> None:
+            handler = None
+            previous_level = LOGGER.level
+            error = None
+            try:
+                handler = disk_log_handler()
+                LOGGER.addHandler(handler)
+                LOGGER.setLevel(logging.INFO)
+                LOGGER.info("Installiere die Browser-Komponente (Chromium) …")
+                module.install(lambda line: LOGGER.info("%s", str(line).rstrip()[:500]))
+                LOGGER.info("Browser-Komponente installiert.")
+            except Exception as exc:  # noqa: BLE001 — report failures through SSE
+                error = "Die Browser-Komponente konnte nicht installiert werden."
+                if isinstance(exc, RuntimeError) and str(exc):
+                    error = str(exc)
+                LOGGER.error("%s", error)
+            finally:
+                if handler:
+                    LOGGER.removeHandler(handler)
+                    handler.close()
+                LOGGER.setLevel(previous_level)
+                lock.__exit__()
+                with browser_lock:
+                    browser_install.update(running=False, error=error)
+
+        try:
+            threading.Thread(target=install_worker, daemon=True).start()
+        except BaseException:
+            with browser_lock:
+                browser_install.update(running=False)
             lock.__exit__()
             raise
         return {"started": True}

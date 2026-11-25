@@ -1,7 +1,7 @@
 // Formularbausteine, die Einstellungen und Ersteinrichtung gemeinsam nutzen.
 import { h, button, fmtRelative, hasNativeFolderPicker, chooseFolder } from '../util.js';
 import { icon } from '../icons.js';
-import { settingRow, switchInput, nextId, showFieldErrors, clearFieldErrors } from '../components.js';
+import { settingRow, switchInput, nextId, showFieldErrors, clearFieldErrors, LogView } from '../components.js';
 import { errorMessage } from '../api.js';
 
 // pywebview stellt seine JS-API ggf. erst nach dem Laden bereit.
@@ -292,4 +292,67 @@ export function scheduleBlock(ctx, schedule, { withSave = true } = {}) {
   );
   sync();
   return { el, save, value };
+}
+
+// ------------------------------------------------------------------ Browser-Komponente
+
+/**
+ * Status der Browser-Komponente (Playwright-Chromium) mit Installationsknopf und Live-Protokoll.
+ * Entspricht `ilias-sync browser install`.
+ */
+export function browserBlock(ctx, { showLog = true } = {}) {
+  const { store, actions } = ctx;
+  const line = h('div', { class: 'browser-line', 'aria-live': 'polite' });
+  const path = h('p', { class: 'setting-desc mono browser-path' });
+  const installBtn = button('Installieren', { icon: 'download', variant: 'primary', size: 'sm', onclick: () => start() });
+  const log = showLog ? new LogView({ label: 'Protokoll der Installation', height: '160px' }) : null;
+  let logVisible = false;
+  if (log) log.el.hidden = true;
+
+  function start() {
+    logVisible = true;
+    log?.setLines([]);
+    actions.installBrowser();
+  }
+
+  function update() {
+    const b = store.browser;
+    let tone = 'muted';
+    let text = 'Wird geprüft …';
+    if (b?.unavailable) text = 'Wird in dieser Version separat verwaltet';
+    else if (b?.installing) {
+      tone = 'running';
+      text = 'Wird installiert … (einige Minuten, ca. 150 MB)';
+    } else if (b?.installed) {
+      tone = 'success';
+      text = 'Installiert';
+    } else if (b) {
+      tone = 'danger';
+      text = b.error ? `Installation fehlgeschlagen: ${b.error}` : 'Nicht installiert – ohne Chromium kann ILIAS Sync nicht synchronisieren';
+    }
+    line.replaceChildren(
+      tone === 'running' ? icon('sync', { size: 14, className: 'spin' }) : h('span', { class: `dot dot-${tone}`, 'aria-hidden': 'true' }),
+      h('span', {}, 'Chromium: ', h('strong', {}, text)),
+    );
+    path.textContent = b?.installed && b.executable ? b.executable : '';
+    path.hidden = !path.textContent;
+    installBtn.hidden = !b || b.unavailable;
+    installBtn.disabled = Boolean(b?.installing);
+    installBtn.querySelector('.btn-label').textContent = b?.installed ? 'Neu installieren' : b?.installing ? 'Installiere …' : 'Installieren';
+    installBtn.className = installBtn.className.replace(/btn-(primary|secondary)/, b?.installed ? 'btn-secondary' : 'btn-primary');
+    if (log) log.el.hidden = !(logVisible || b?.installing);
+  }
+
+  const offs = [store.on('browser', update)];
+  if (log) offs.push(store.on('log', (l) => (logVisible || store.browser?.installing) && log.add([l])));
+  update();
+  if (!store.browser) actions.refreshBrowser();
+  const el = h('div', { class: 'browser-block' }, h('div', { class: 'browser-head' }, h('div', {}, line, path), installBtn), log?.el);
+  return {
+    el,
+    destroy() {
+      offs.forEach((fn) => fn());
+      log?.destroy();
+    },
+  };
 }

@@ -10,12 +10,11 @@ import mmap
 import os
 import signal
 import subprocess
-import sys
 import threading
 import time
 from collections import deque
 from collections.abc import Iterator
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -233,6 +232,47 @@ def recent_files(limit: int) -> Iterator[dict[str, Any]]:
             remaining -= 1
 
 
+@dataclass(frozen=True)
+class SyncOptions:
+    """Options of a manual run; mirror the flags of ``ilias-sync run``."""
+
+    dry_run: bool = False
+    course: str | None = None
+    semester: str | None = None
+    max_depth: int | None = None
+    overwrite: bool = False
+    no_auto_discover: bool = False
+    no_auto_login: bool = False
+    headful: bool = False
+    verbose: bool = False
+    debug_links: bool = False
+    notify: bool = False
+
+    FLAGS = (
+        "dry_run",
+        "overwrite",
+        "no_auto_discover",
+        "no_auto_login",
+        "headful",
+        "verbose",
+        "debug_links",
+        "notify",
+    )
+
+    def to_args(self) -> list[str]:
+        args = [
+            "--" + name.replace("_", "-") for name in self.FLAGS if getattr(self, name)
+        ]
+        # "--name=value" keeps values that start with "-" from being parsed as flags.
+        if self.course is not None:
+            args.append("--course=" + self.course)
+        if self.semester is not None:
+            args.append("--semester=" + self.semester)
+        if self.max_depth is not None:
+            args.append(f"--max-depth={self.max_depth}")
+        return args
+
+
 class SyncRunner:
     def __init__(self) -> None:
         self._start_lock = threading.Lock()
@@ -256,25 +296,20 @@ class SyncRunner:
             "checked_at": checked_at or now_iso(),
         }
 
-    def start(self, dry_run: bool = False, course: str | None = None) -> str:
+    def start(self, options: SyncOptions | None = None) -> str:
+        options = options or SyncOptions()
         with self._start_lock:
             directory = TemporaryDirectory(dir=self._data_dir())
             report_path = Path(directory.name) / "report.json"
             handshake = Path(directory.name) / "started.json"
-            command = [
-                sys.executable,
-                "-m",
-                "ilias_sync",
+            command = paths.cli_command(
                 "run",
                 "--trigger",
                 "manual",
                 "--report-json",
                 str(report_path),
-            ]
-            if dry_run:
-                command.append("--dry-run")
-            if course is not None:
-                command.extend(["--course=" + course])
+                *options.to_args(),
+            )
             process = subprocess.Popen(
                 command,
                 stdin=subprocess.DEVNULL,

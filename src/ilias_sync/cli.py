@@ -15,7 +15,7 @@ from pathlib import Path
 
 from keyring.errors import KeyringError
 
-from . import auth, notifications, paths, schedule
+from . import auth, browser, notifications, paths, schedule, shell_command
 from .config import ConfigError, import_legacy_config, load_config, validate_config
 from .crawler import CrawlConfig, IliasUnreachableError, SessionExpiredError, run_sync
 from .reports import RunReport, now_iso
@@ -78,6 +78,17 @@ def parser() -> argparse.ArgumentParser:
     enable.add_argument("--run-at-login", action="store_true")
     jobs.add_parser("disable")
     jobs.add_parser("status")
+    browsers = commands.add_parser("browser", help="Chromium verwalten").add_subparsers(
+        dest="action", required=True
+    )
+    browsers.add_parser("status")
+    browsers.add_parser("install")
+    shell = commands.add_parser(
+        "shell-command", help="Terminal-Befehl verwalten"
+    ).add_subparsers(dest="action", required=True)
+    shell.add_parser("status", help="Installationsstatus anzeigen")
+    shell.add_parser("install", help="Terminal-Befehl installieren")
+    shell.add_parser("uninstall", help="Terminal-Befehl entfernen")
     return root
 
 
@@ -246,6 +257,27 @@ def main() -> int:
                 )
             else:
                 auth.delete_credentials(load_config().keychain_service)
+        if args.command == "browser":
+            if args.action == "status":
+                print(json.dumps(browser.status(), ensure_ascii=False, indent=2))
+            else:
+                browser.install(lambda line: print(line, flush=True))
+        if args.command == "shell-command":
+            operation = {
+                "status": shell_command.status,
+                "install": shell_command.install,
+                "uninstall": shell_command.uninstall,
+            }[args.action]
+            info = operation()
+            if not info["supported"]:
+                print(info["instructions"])
+                return 0 if args.action == "status" else 1
+            if info["installed"]:
+                print(f"Terminal-Befehl installiert: {info['path']} → {info['target']}")
+                if info["path_line"]:
+                    print(f"Für zsh in ~/.zprofile ergänzen und ein neues Terminal öffnen:\n{info['path_line']}")
+            else:
+                print("Terminal-Befehl nicht installiert.")
         if args.command == "schedule":
             if args.action == "status":
                 result = schedule.status()

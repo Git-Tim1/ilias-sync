@@ -1,6 +1,7 @@
 """Locations for private runtime data."""
 
 import os
+import sys
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -15,6 +16,15 @@ HISTORY = DATA / "history.jsonl"
 CURRENT = DATA / "current.json"
 LOCK = DATA / "browser.lock"
 LOGS = Path(user_log_dir(APP))
+
+if getattr(sys, "frozen", False):
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(DATA / "browsers")
+
+
+def cli_command(*args: str) -> list[str]:
+    if getattr(sys, "frozen", False):
+        return [sys.executable, *args]
+    return [sys.executable, "-m", "ilias_sync", *args]
 
 
 def atomic_write(path: Path, content: str) -> None:

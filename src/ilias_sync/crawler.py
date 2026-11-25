@@ -37,6 +37,7 @@ from slugify import slugify
 from tqdm import tqdm
 
 from . import paths
+from .browser import MISSING
 from .config import EXTENSIONS, Config
 from .reports import CourseReport, FileEntry, RunProgress, RunReport
 
@@ -1430,6 +1431,8 @@ def sync_local_course(config: CrawlConfig, course_name: str) -> int:
 
 
 def launch_context(playwright: Any, headful: bool) -> BrowserContext:
+    if not Path(playwright.chromium.executable_path).is_file():
+        raise RuntimeError(MISSING)
     paths.PROFILE.mkdir(parents=True, exist_ok=True)
     context = playwright.chromium.launch_persistent_context(
         user_data_dir=str(paths.PROFILE),

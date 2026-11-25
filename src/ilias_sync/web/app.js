@@ -1,6 +1,6 @@
 // Einstieg der Oberfläche: Zustand, Router, Live-Verbindung, zentrale Aktionen.
 import { createApi, errorMessage, NetworkError } from './api.js';
-import { h, prefs, replaceChildren, plural } from './util.js';
+import { h, replaceChildren, plural } from './util.js';
 import { icon } from './icons.js';
 import { toast, announce } from './components.js';
 import * as overview from './views/overview.js';
@@ -29,6 +29,7 @@ function createStore() {
     connection: 'connecting', // SSE: connecting | open | closed
     reachable: true, // Backend per HTTP erreichbar
     loginPending: false,
+    browser: null, // Browser-Komponente: {installed, installing, error} | {unavailable: true}
     on(type, fn) {
       if (!listeners.has(type)) listeners.set(type, new Set());
       listeners.get(type).add(fn);
@@ -158,24 +159,75 @@ function onRunFinished(report) {
 
 // ------------------------------------------------------------------ Aktionen
 
+// ------------------------------------------------------------------ Browser-Komponente
+
+let browserPoll = null;
+
+async function refreshBrowser() {
+  try {
+    const info = await guarded(api.getBrowser());
+    const wasInstalling = store.browser?.installing;
+    store.browser = info;
+    if (wasInstalling && !info.installing) {
+      if (info.installed) toast('Browser-Komponente installiert.', { tone: 'success' });
+      else toast(info.error || 'Die Browser-Komponente konnte nicht installiert werden.', { tone: 'danger', timeout: 8000 });
+    }
+  } catch (err) {
+    // 503: Diese Version verwaltet den Browser nicht selbst – dann keine Hinweise zeigen.
+    store.browser = err.status === 503 ? { unavailable: true } : store.browser;
+  }
+  clearTimeout(browserPoll);
+  if (store.browser?.installing) browserPoll = setTimeout(() => refreshBrowser(), 1500);
+  store.emit('browser', store.browser);
+  return store.browser;
+}
+
+/** Fehlt Chromium? (false, solange der Status unbekannt ist) */
+const browserMissing = (b = store.browser) => Boolean(b && !b.unavailable && !b.installed);
+
 const actions = {
-  async startSync(dryRun = false) {
-    if (store.status?.running) return;
+  /**
+   * Startet einen Lauf. `arg` ist `true`/`false` (Probelauf) oder ein Optionsobjekt
+   * ({dryRun, course, semester, max_depth, …}, siehe SyncOptions in docs/API.md).
+   * @returns {Promise<Error|null>} Fehler (bereits als Toast gezeigt, außer bei Feldfehlern) oder null.
+   */
+  async startSync(arg = false) {
+    if (store.status?.running) return null;
+    const options = typeof arg === 'object' && arg ? arg : { dryRun: Boolean(arg) };
     store.logLines = [];
     store.emit('logs:reset', store.logLines);
     try {
-      await guarded(api.startSync({ dryRun }));
+      await guarded(api.startSync(options));
       // Status sofort holen, falls das erste SSE-Event noch unterwegs ist.
       refreshStatus().catch(() => {});
+      return null;
     } catch (err) {
       if (err.code === 'already_running') {
         toast('Es läuft bereits eine Synchronisierung.', { tone: 'neutral' });
         refreshStatus().catch(() => {});
-      } else {
+      } else if (!err.fields) {
         toast(errorMessage(err), { tone: 'danger' });
       }
+      return err;
     }
   },
+  async installBrowser() {
+    if (store.browser?.installing) return;
+    store.logLines = [];
+    store.emit('logs:reset', store.logLines);
+    try {
+      await guarded(api.installBrowser());
+      store.browser = { ...(store.browser ?? {}), installing: true, error: null };
+      store.emit('browser', store.browser);
+      announce('Installation der Browser-Komponente gestartet.');
+      browserPoll = setTimeout(() => refreshBrowser(), 1000);
+    } catch (err) {
+      toast(err.code === 'already_running' ? 'Bitte warten, bis der laufende Sync beendet ist.' : errorMessage(err), { tone: 'danger' });
+      refreshBrowser();
+    }
+  },
+  refreshBrowser,
+  browserMissing,
   async cancelSync() {
     try {
       await guarded(api.cancelSync());
@@ -351,14 +403,17 @@ async function boot() {
 
   connectLive();
   if (status.running) loadLogs();
+  refreshBrowser();
   refreshRuns().catch(() => {});
   refreshFiles().catch(() => {});
 
   // Relative Zeitangaben aktuell halten.
   setInterval(() => store.emit('tick', Date.now()), 30000);
 
-  const needsSetup = !status.credentials_configured || !status.last_run;
-  if (needsSetup && !prefs.get('setupDone', false) && !location.hash.includes('einstellungen')) {
+  // Ob die Einrichtung nötig ist, entscheidet das Backend: Das Desktop-Fenster
+  // vergisst localStorage bei jedem Start (pywebview private_mode).
+  const needsSetup = status.setup ? status.setup.required : !status.credentials_configured && !status.last_run;
+  if (needsSetup && !location.hash.includes('einstellungen')) {
     window.history.replaceState(null, '', '#/einrichtung');
   }
   window.addEventListener('hashchange', render);

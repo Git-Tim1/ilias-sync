@@ -5,11 +5,12 @@
 // Optionale Parameter:
 //   scenario=ok|errors|expired|offline|setup|running   (Standard: ok)
 //   speed=<Faktor>                                      (Standard: 1)
+//   browser=missing|unavailable                         (Standard: installiert)
 
 import { ApiError } from './api.js';
 
 const BASE = 'https://www.ilias.uni-koeln.de/ilias/';
-const ROOT = '~/Documents/Uni/ILIAS';
+const ROOT = '~/Documents/Uni';
 
 const COURSES = [
   { name: '[WS26/27] Softwaretechnik', short: 'Softwaretechnik', id: 5512034, found: 38 },
@@ -219,11 +220,41 @@ function buildRuns(files) {
 
 // --------------------------------------------------------------- Mock-API
 
+// Entspricht Config() im Backend (src/ilias_sync/config.py).
+const DEFAULT_CONFIG = {
+  base_url: 'https://www.ilias.uni-koeln.de/ilias/',
+  login_url: 'https://www.ilias.uni-koeln.de/ilias/login.php?client_id=uk&cmd=force_login&lang=de',
+  download_dir: '~/Documents/Uni',
+  local_download_dir: null,
+  auto_discover_current_semester: true,
+  semester_filter: 'auto',
+  include_configured_courses: false,
+  courses: {},
+  file_extensions: ['csv', 'doc', 'docx', 'ipynb', 'java', 'jpeg', 'jpg', 'md', 'odp', 'ods', 'odt', 'pdf', 'png', 'ppt', 'pptx', 'py', 'rtf', 'tex', 'txt', 'xls', 'xlsx', 'zip'],
+  max_depth: 10,
+  overwrite: false,
+  auto_login: true,
+  notifications: true,
+  open_login_window_on_failure: true,
+  keychain_service: 'ilias-koeln-sync',
+};
+
 export function createMockApi(params = new URLSearchParams()) {
   const scenario = params.get('scenario') || 'ok';
   const speed = Math.max(0.1, Number(params.get('speed')) || 1);
 
+  const browserParam = params.get('browser');
   const db = {
+    shellCommand: {
+      installed: false, path: '~/.local/bin/ilias-sync',
+      target: '/Applications/ILIAS Sync.app/Contents/MacOS/ilias-sync',
+      on_path: false, frozen: true, supported: true,
+      path_line: 'export PATH="$HOME/.local/bin":"$PATH"', instructions: null,
+    },
+    browser:
+      browserParam === 'unavailable'
+        ? null
+        : { installed: browserParam !== 'missing', executable: browserParam === 'missing' ? null : '~/Library/Caches/ms-playwright/chromium-1187/chrome-mac/Chromium.app', installing: false, error: null },
     config: {
       base_url: BASE,
       login_url: `${BASE}login.php?client_id=uk&cmd=force_login&lang=de`,
@@ -243,6 +274,7 @@ export function createMockApi(params = new URLSearchParams()) {
       open_login_window_on_failure: true,
       notifications: true,
     },
+    setupCompleted: true,
     credentials: { configured: true, username: 'mm***r' },
     schedule: { supported: true, enabled: true, time: '09:00', run_at_login: true },
     session: { state: 'valid', checked_at: isoLocal(at(0, 9, 0, 1)) },
@@ -274,14 +306,13 @@ export function createMockApi(params = new URLSearchParams()) {
   } else if (scenario === 'errors') {
     db.runs[0] = { ...db.runs[1], run_id: runIdFor(latestStart), started_at: isoLocal(latestStart), finished_at: isoLocal(addSec(latestStart, 124)) };
   } else if (scenario === 'setup') {
+    db.setupCompleted = false;
     db.runs = [];
     db.files = [];
     db.credentials = { configured: false, username: null };
     db.schedule = { supported: true, enabled: false, time: '09:00', run_at_login: false };
     db.session = { state: 'unknown', checked_at: null };
-    db.config.download_dir = '~/Documents/Uni/ILIAS';
-    db.config.local_download_dir = null;
-    db.config.courses = {};
+    db.config = structuredClone(DEFAULT_CONFIG);
   }
 
   db.logs = [
@@ -318,8 +349,9 @@ export function createMockApi(params = new URLSearchParams()) {
     last_run: db.runs[0] ?? null,
     session: db.session,
     credentials_configured: db.credentials.configured,
+    setup: { completed: db.setupCompleted, required: !db.setupCompleted && !db.credentials.configured },
     schedule: db.schedule,
-    version: '0.1.0',
+    version: '0.2.0',
   });
   const emitStatus = () => emit('status', status());
 
@@ -341,7 +373,8 @@ export function createMockApi(params = new URLSearchParams()) {
     ];
   }
 
-  async function simulateRun({ dryRun, trigger }) {
+  async function simulateRun({ dryRun, trigger, options = {} }) {
+    const courses = options.course ? COURSES.filter((c) => c.name === options.course || c.short === options.course) : COURSES;
     const start = new Date();
     cancelRequested = false;
     db.current = {
@@ -357,7 +390,7 @@ export function createMockApi(params = new URLSearchParams()) {
       courses: [],
       new_files: [],
       // Nicht im Vertrag (Wunsch, siehe Bericht): optionaler Fortschritt.
-      progress: { courses_done: 0, courses_total: COURSES.length, current_course: null },
+      progress: { courses_done: 0, courses_total: courses.length, current_course: null },
     };
     const step = (ms) => new Promise((r) => setTimeout(r, ms / speed));
     const planned = dryRun ? [] : plannedNewFiles();
@@ -365,23 +398,27 @@ export function createMockApi(params = new URLSearchParams()) {
 
     emitStatus();
     log(`Starte ${dryRun ? 'Probelauf' : 'Synchronisierung'} (${trigger === 'manual' ? 'manuell' : 'automatisch'})`);
+    if (options.headful) log('Browser wird sichtbar gestartet (--headful).');
+    if (options.verbose) log('Ausführliches Protokoll aktiv.', 'DEBUG');
     await step(500);
     log('Prüfe ILIAS-Sitzung …');
     await step(600);
     log('Sitzung gültig');
     await step(400);
-    log('Suche ILIAS-Kurse für Semester: WS26/27');
+    log(`Suche ILIAS-Kurse für Semester: ${options.semester || 'WS26/27'}`);
     await step(700);
     log(`${COURSES.length} Kurse gefunden`);
+    if (options.course) log(courses.length ? `Nur Kurs: ${courses[0].name}` : `Kurs nicht gefunden: ${options.course}`, courses.length ? 'INFO ' : 'ERROR');
     emitStatus();
 
-    for (const [index, c] of COURSES.entries()) {
+    for (const [index, c] of courses.entries()) {
       if (cancelRequested) break;
-      db.current.progress = { courses_done: index, courses_total: COURSES.length, current_course: c.short };
+      db.current.progress = { courses_done: index, courses_total: courses.length, current_course: c.short };
       emitStatus();
       log(`Synchronisiere Kurs: ${c.name}`);
       await step(350);
       log(`Öffne: ${courseUrl(c)}`);
+      if (options.debug_links) log(`Links in ${c.short}: 14 Ordner, ${c.found} Dateien`, 'DEBUG');
       await step(450);
       const mine = (dryRun ? dryPlanned : planned).filter((p) => p[0] === c.short);
       log(`${c.found} Download-Kandidaten, ${c.found - mine.length} bereits vorhanden`);
@@ -417,7 +454,7 @@ export function createMockApi(params = new URLSearchParams()) {
         error_message: null,
       });
       db.current.totals = totalsOf(db.current.courses);
-      db.current.progress = { courses_done: index + 1, courses_total: COURSES.length, current_course: c.short };
+      db.current.progress = { courses_done: index + 1, courses_total: courses.length, current_course: c.short };
       emitStatus();
       await step(300);
     }
@@ -425,7 +462,10 @@ export function createMockApi(params = new URLSearchParams()) {
     const finished = db.current;
     finished.finished_at = isoLocal(new Date());
     delete finished.progress;
-    if (cancelRequested) {
+    if (options.course && !courses.length) {
+      finished.result = 'failed';
+      finished.message = `Kurs nicht gefunden: ${options.course}`;
+    } else if (cancelRequested) {
       finished.result = 'cancelled';
       finished.message = 'Vom Benutzer abgebrochen.';
       log('Lauf abgebrochen.', 'WARN ');
@@ -480,20 +520,61 @@ export function createMockApi(params = new URLSearchParams()) {
     return fields;
   }
 
+  // ------------------------------------------------------------ Hilfen für „Erweitert“
+
+  function toYaml(obj) {
+    const scalar = (v) => (v === null ? 'null' : typeof v === 'string' ? (/^[\w./~@-]+$/.test(v) && !/^(true|false|null|auto)$/.test(v) ? v : JSON.stringify(v)) : String(v));
+    const lines = [];
+    for (const [k, v] of Object.entries(obj)) {
+      if (Array.isArray(v)) {
+        lines.push(`${k}:`);
+        for (const item of v) lines.push(`- ${scalar(item)}`);
+      } else if (v && typeof v === 'object') {
+        const entries = Object.entries(v);
+        lines.push(entries.length ? `${k}:` : `${k}: {}`);
+        for (const [ik, iv] of entries) lines.push(`  ${JSON.stringify(ik)}: ${scalar(iv)}`);
+      } else lines.push(`${k}: ${scalar(v)}`);
+    }
+    return `${lines.join('\n')}\n`;
+  }
+
+  const PATHS = {
+    config: { path: '~/Library/Application Support/ilias-sync/config.yaml', exists: scenario !== 'setup' },
+    data: { path: '~/Library/Application Support/ilias-sync', exists: true },
+    logs: { path: '~/Library/Logs/ilias-sync', exists: scenario !== 'setup' },
+  };
+
+  function validateSyncOptions(options) {
+    const fields = {};
+    const allowed = new Set(['dry_run', 'course', 'semester', 'max_depth', 'overwrite', 'no_auto_discover', 'no_auto_login', 'headful', 'verbose', 'debug_links', 'notify']);
+    for (const key of Object.keys(options)) if (!allowed.has(key)) fields[key] = 'Unbekannte Option.';
+    if (options.max_depth !== null && options.max_depth !== undefined && (!Number.isInteger(options.max_depth) || options.max_depth < 1 || options.max_depth > 100)) {
+      fields.max_depth = 'Bitte eine ganze Zahl von 1 bis 100 angeben.';
+    }
+    for (const key of ['course', 'semester']) {
+      const v = options[key];
+      if (v !== null && v !== undefined && (typeof v !== 'string' || v.length > 300 || /[\u0000-\u001f]/.test(v))) fields[key] = 'Bitte einen einzeiligen Text angeben.';
+    }
+    return fields;
+  }
+
   // ------------------------------------------------------------ Öffentliche API
 
   const api = {
     mock: true,
     scenario,
     getStatus: () => respond(status()),
-    async startSync({ dryRun = false } = {}) {
+    async startSync({ dryRun = false, ...options } = {}) {
       await delay();
       if (db.current) throw new ApiError(409, { error: 'already_running', message: 'Es läuft bereits eine Synchronisierung.' });
+      const fields = validateSyncOptions(options);
+      if (Object.keys(fields).length) throw new ApiError(422, { error: 'invalid_sync_options', message: 'Bitte prüfe die Sync-Optionen.', fields });
+      if (db.browser?.installing) throw new ApiError(409, { error: 'already_running', message: 'Die Browser-Komponente wird gerade installiert.' });
       if (db.session.state === 'expired' && !db.config.auto_login) {
         throw new ApiError(409, { error: 'session_expired', message: 'Die Sitzung ist abgelaufen. Bitte zuerst neu anmelden.' });
       }
       const runId = runIdFor(new Date());
-      simulateRun({ dryRun, trigger: 'manual' });
+      simulateRun({ dryRun, trigger: 'manual', options });
       return { run_id: runId };
     },
     async cancelSync() {
@@ -511,6 +592,82 @@ export function createMockApi(params = new URLSearchParams()) {
     openFolder: (which) => respond({ opened: which }),
     getLogs: (lines = 200) => respond({ lines: db.logs.slice(-lines) }),
     getConfig: () => respond(db.config),
+    getConfigDefaults: () => respond(DEFAULT_CONFIG),
+    getConfigYaml: () => respond({ path: PATHS.config.path, exists: PATHS.config.exists, yaml: toYaml(db.config) }),
+    async importConfig(path) {
+      await delay(300);
+      const p = String(path ?? '').trim();
+      if (!/^(\/|~)/.test(p)) throw new ApiError(422, { error: 'invalid_path', message: 'Bitte einen absoluten Dateipfad angeben.' });
+      if (!/\.ya?ml$/i.test(p)) throw new ApiError(422, { error: 'invalid_path', message: 'Bitte eine YAML-Datei (.yaml oder .yml) auswählen.' });
+      if (/fehlt|missing/i.test(p)) throw new ApiError(404, { error: 'file_not_found', message: 'Die Datei wurde nicht gefunden.' });
+      db.config = {
+        ...db.config,
+        download_dir: '~/Documents/ILIAS Downloads',
+        auto_discover_current_semester: false,
+        include_configured_courses: true,
+        auto_login: false,
+        max_depth: 3,
+        semester_filter: 'WS26/27',
+        courses: Object.fromEntries(COURSES.slice(0, 3).map((c) => [c.name, courseUrl(c)])),
+      };
+      PATHS.config.exists = true;
+      return structuredClone(db.config);
+    },
+    getPaths: () => respond(PATHS),
+    revealPath: (which) => respond({ opened: which }),
+    async getShellCommand() {
+      return structuredClone(db.shellCommand);
+    },
+    async installShellCommand() {
+      db.shellCommand.installed = true;
+      return structuredClone(db.shellCommand);
+    },
+    async uninstallShellCommand() {
+      db.shellCommand.installed = false;
+      return structuredClone(db.shellCommand);
+    },
+    async getBrowser() {
+      await delay();
+      if (!db.browser) throw new ApiError(503, { error: 'browser_unavailable', message: 'Die Browser-Verwaltung ist in dieser Version nicht verfügbar.' });
+      return structuredClone(db.browser);
+    },
+    async installBrowser() {
+      await delay();
+      if (!db.browser) throw new ApiError(503, { error: 'browser_unavailable', message: 'Die Browser-Verwaltung ist in dieser Version nicht verfügbar.' });
+      if (db.browser.installing) throw new ApiError(409, { error: 'already_installing', message: 'Die Browser-Komponente wird bereits installiert.' });
+      if (db.current) throw new ApiError(409, { error: 'already_running', message: 'Ein Sync läuft bereits.' });
+      db.browser = { ...db.browser, installing: true, error: null };
+      log('Installiere die Browser-Komponente (Chromium) …');
+      const steps = [10, 30, 50, 70, 90, 100];
+      steps.forEach((pct, i) => setTimeout(() => log(`Downloading Chromium 140.0 (playwright build v1187) – ${pct}% of 148.6 MiB`), ((i + 1) * 500) / speed));
+      setTimeout(() => {
+        log('Chromium 140.0 (playwright build v1187) downloaded to ~/Library/Caches/ms-playwright/chromium-1187');
+        log('Browser-Komponente installiert.');
+        db.browser = { installed: true, executable: '~/Library/Caches/ms-playwright/chromium-1187/chrome-mac/Chromium.app', installing: false, error: null };
+      }, ((steps.length + 1) * 500) / speed);
+      return { started: true };
+    },
+    getSetupSuggestions: () =>
+      respond({
+        download_dirs: [
+          { id: 'documents', label: 'Dokumente', description: 'Nur auf diesem Computer. Schnell und zuverlässig.', path: '~/Documents/Uni', kind: 'local', exists: false },
+          { id: 'icloud', label: 'iCloud Drive', description: 'Auch auf iPhone und iPad verfügbar.', path: '~/Library/Mobile Documents/com~apple~CloudDocs/Uni', kind: 'cloud', exists: false },
+          { id: 'google-drive-0', label: 'Google Drive', description: 'Wird von der Google-Drive-App in die Cloud übertragen.', path: '~/Library/CloudStorage/GoogleDrive/My Drive/Uni', kind: 'cloud', exists: true },
+        ],
+        defaults: DEFAULT_CONFIG,
+      }),
+    async completeSetup() {
+      await delay();
+      db.setupCompleted = true;
+      emitStatus();
+      return { completed: true, required: false };
+    },
+    async resetSetup() {
+      await delay();
+      db.setupCompleted = false;
+      emitStatus();
+      return { completed: false, required: !db.credentials.configured };
+    },
     async putConfig(partial) {
       await delay();
       const fields = validateConfig(partial);

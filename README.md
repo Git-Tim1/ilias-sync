@@ -5,59 +5,122 @@ Voreinstellungen sind für die Universität zu Köln ausgelegt. Du kannst
 Kurse des aktuellen Semesters automatisch suchen oder gezielt Kurs-URLs
 hinterlegen.
 
-## Oberfläche
+## Download
 
-| Übersicht | Laufender Sync im Dunkelmodus |
+Öffne das [aktuelle GitHub-Release](https://github.com/Git-Tim1/ilias-sync/releases/latest)
+und lade unter **Assets** das passende Paket herunter.
+
+| Plattform | Paket | Start |
+| --- | --- | --- |
+| macOS | `ILIAS-Sync-<Version>-macOS-arm64.dmg` für Apple Silicon oder `…-macOS-x86_64.dmg` für Intel | DMG öffnen, **ILIAS Sync** in **Programme** ziehen und dort öffnen |
+| Windows x64 | `ILIAS-Sync-<Version>-Windows-x86_64.zip` | ZIP vollständig entpacken und `ilias-sync.exe` starten |
+| Linux x64 | `ILIAS-Sync-<Version>-Linux-x86_64.tar.gz` | Archiv entpacken und `ilias-sync` ausführen. Die Oberfläche öffnet sich im Standardbrowser |
+| pip | `ilias_sync-<Version>-py3-none-any.whl` | Mit Python 3.11+ per `pip install ./ilias_sync-<Version>-py3-none-any.whl` installieren und `ilias-sync app` starten |
+
+Beim ersten Start führt die Einrichtung durch die Installation der
+Browser-Komponente. Der Chromium-Download benötigt je nach Plattform und Chromium-Version
+etwa 150 bis 200 MB. Du kannst ihn auch in den Einstellungen starten.
+
+- **macOS:** Die App ist ad hoc signiert. Wenn Gatekeeper beim ersten Versuch
+  blockiert, nutze auf älteren macOS-Versionen **Rechtsklick → Öffnen**.
+  Auf neueren Versionen findest du **Trotzdem öffnen** unter
+  **Systemeinstellungen → Datenschutz & Sicherheit**.
+  [Apple-Support](https://support.apple.com/de-de/102445)
+- **Windows:** Wenn SmartScreen den offiziellen Download blockiert, wähle
+  **Weitere Informationen → Trotzdem ausführen**, sofern angeboten.
+  Für das App-Fenster ist die Microsoft Edge WebView2 Runtime vorgesehen.
+  [Microsoft WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)
+- **Linux:** Das Paket wird auf Ubuntu 22.04 gebaut. Chromium benötigt die
+  Systembibliotheken einer von Playwright unterstützten Distribution.
+  [Playwright-Systemabhängigkeiten](https://playwright.dev/python/docs/browsers#install-system-dependencies)
+
+## Funktionen
+
+- Kursmaterialien des aktuellen Semesters automatisch finden oder einzelne Kurse abrufen.
+- Dateitypen und Ordnertiefe einstellen, einen zweiten Zielordner nutzen und Änderungen vorab im Probelauf prüfen.
+- Fortschritt, neu geladene Dateien und Protokolle in der Oberfläche einsehen.
+- Auf macOS geplante Läufe und Mitteilungen einrichten.
+
+| Ersteinrichtung | Übersicht |
 | --- | --- |
-| ![Übersicht](docs/screenshots/overview-idle-light.png) | ![Laufender Sync](docs/screenshots/overview-running-dark.png) |
-| **Einstellungen** | **Verlauf** |
-| ![Einstellungen](docs/screenshots/settings-light.png) | ![Verlauf](docs/screenshots/history-light.png) |
+| ![Erster Schritt der Einrichtung](docs/screenshots/setup-1-light.png) | ![Übersicht](docs/screenshots/overview-idle-light.png) |
+| **Erweiterter Sync** | **Erweiterte Einstellungen** |
+| ![Erweiterter Sync](docs/screenshots/sync-options-light.png) | ![Erweiterte Einstellungen](docs/screenshots/settings-advanced-light.png) |
 
-## Installation
+![Laufender Sync im Dunkelmodus](docs/screenshots/overview-running-dark.png)
 
-Voraussetzung ist Python 3.11 oder neuer. Führe die Befehle im Projektordner aus.
+## Ersteinrichtung
 
-Mit pipx für das Desktop-Fenster und die Kommandozeile:
+**Ersteinrichtung:** Beim ersten Start führt ein Assistent in fünf Schritten durch die Einrichtung. Alles ist vorbelegt (Uni Köln, Ordner `~/Documents/Uni`, täglicher Sync um 09:00); im Normalfall gibst du nur deine Uni-Kennung ein. Das Passwort landet ausschließlich im System-Schlüsselbund.
+
+## Alles auch ohne Terminal
+
+**Alles auch ohne Terminal:** Jede Option von `ilias-sync run` steckt im Dialog „Erweiterter Sync“ (Knopf neben „Jetzt synchronisieren“), z. B. einzelner Kurs, anderes Semester, Ordnertiefe oder sichtbarer Browser. Der Dialog zeigt den passenden Terminal-Befehl an. Unter Einstellungen → Erweitert findest du die Speicherorte, die Konfiguration als YAML, den Import einer alten `config.yaml` und die Installation der Browser-Komponente.
+
+## Kommandozeile (CLI)
+
+### Aus der App
+
+Öffne **Einstellungen → Erweitert → Terminal-Befehl** und wähle **Installieren**.
+Auf macOS und Linux ist das Standardziel `~/.local/bin/ilias-sync`. Die Karte
+zeigt bei Bedarf die Zeile für `~/.zprofile`. Alternativ kannst du im Terminal
+die App-Binary mit `shell-command install` aufrufen, etwa auf macOS:
 
 ```sh
-pipx install --include-deps '.[desktop]'
-playwright install chromium
+"/Applications/ILIAS Sync.app/Contents/MacOS/ilias-sync" shell-command install
 ```
 
-Alternativ mit einer virtuellen Umgebung:
+Unter Windows rufst du `.\ilias-sync.exe --help` im entpackten Ordner auf.
+
+### Mit pipx
+
+Mit Python 3.11 oder neuer kannst du das Wheel aus dem Release oder den
+Stand des Quellcode-Repos installieren:
+
+```sh
+pipx install ./ilias_sync-0.2.0-py3-none-any.whl
+# Alternativ direkt aus dem Repo
+pipx install git+https://github.com/Git-Tim1/ilias-sync
+```
+
+### Aus dem Quellcode
+
+Führe im ausgecheckten Projektordner aus:
 
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
 python -m pip install '.[desktop]'
-playwright install chromium
+ilias-sync browser install
 ```
 
-Für die Kommandozeile und die Oberfläche im Browser reicht die Installation
-von `.`. Unter Linux benötigt das Desktop-Fenster zusätzlich ein passendes
-pywebview-Backend.
+Für die CLI und die Browser-Oberfläche genügt `python -m pip install .`.
+Das Desktop-Fenster benötigt unter Linux zusätzlich ein passendes
+pywebview-Backend. Bei der pipx-Installation oben kannst du die
+Browser-Oberfläche mit `ilias-sync serve --open-browser` starten.
 
-## Einrichtung
+### Befehlsübersicht
 
-1. Starte die Oberfläche mit `ilias-sync app`. Mit
-   `ilias-sync serve --open-browser` öffnest du sie im Browser. Die HTTP-API ist
-   lokal unter `http://127.0.0.1:8765/` erreichbar. Der Desktop-Server läuft
-   solange das Fenster offen ist. Ein separat gestarteter Server läuft bis
-   zum Beenden des Befehls. Der Zeitplan arbeitet ohne Server.
-2. Stelle den Download-Ordner ein. Standardmäßig ist das
-   `~/Documents/ILIAS Downloads`. Optional kannst du einen zweiten Ordner für
-   eine zusätzliche lokale Kopie angeben.
-3. Starte in der Oberfläche die Anmeldung oder führe `ilias-sync login` aus.
-   Schließe die Anmeldung bei ILIAS im Chromium-Fenster ab, ggf. mit MFA.
-4. Starte die Synchronisierung in der Oberfläche oder mit `ilias-sync run`.
-   `ilias-sync run --dry-run` zeigt, welche Dateien geladen würden.
+Die Übersicht stammt aus `ilias-sync --help` und der Hilfe der Unterbefehle.
+Weitere Optionen zeigt beispielsweise `ilias-sync run --help`.
 
-Optional kannst du den automatischen Login mit `ilias-sync credentials set`
-einrichten. Der Befehl fragt dein Passwort verdeckt ab.
-`ilias-sync credentials delete` entfernt die gespeicherten Zugangsdaten.
+| Befehl | Unterbefehle |
+| --- | --- |
+| `ilias-sync run` | — |
+| `ilias-sync login` | — |
+| `ilias-sync serve` | — |
+| `ilias-sync app` | — |
+| `ilias-sync config` | `path`, `show`, `import` |
+| `ilias-sync credentials` | `set`, `delete` |
+| `ilias-sync schedule` | `enable`, `disable`, `status` |
+| `ilias-sync browser` | `status`, `install` |
+| `ilias-sync shell-command` | `status`, `install`, `uninstall` |
 
-`ilias-sync config path` zeigt den Pfad zur YAML-Datei an.
-`ilias-sync config show` zeigt die aktuelle Konfiguration.
+Oberfläche und Zeitplan starten Synchronisierungen über dieselbe CLI. Der
+lokale HTTP-Server der Desktop-App läuft nur, solange das Fenster offen ist.
+Der Zeitplan funktioniert auch bei geschlossenem Fenster. Mit
+`ilias-sync serve` kannst du den Server separat starten.
+
 ## Umstieg vom alten Skript
 
 `ilias-sync config import <alte config.yaml>` übernimmt die bisherige Konfiguration.
@@ -106,3 +169,21 @@ Lade nur Materialien herunter, auf die du berechtigt zugreifen darfst.
 Die Berechtigung zum Download erlaubt keine Weitergabe.
 
 [MIT-Lizenz](LICENSE)
+
+## Release-Builds und optionale Signierung
+
+Ein Tag `v<Version>` startet die Release-Builds. Die Version steht in
+`src/ilias_sync/__init__.py`. Über **Run workflow** in GitHub Actions kannst du
+die Pakete als CI-Artefakte bauen. Lokal erzeugt `packaging/build_macos.sh`
+mit `.venv` und den installierten Extras `.[desktop,packaging]` das DMG in
+`dist/`.
+
+Für eine spätere macOS-Notarisierung benötigt die CI ein
+**Developer ID Application**-Zertifikat mit privatem Schlüssel, etwa als
+`MACOS_CERTIFICATE_P12_BASE64` und `MACOS_CERTIFICATE_PASSWORD`. Für
+`notarytool` kommen `APPLE_ID`, `APPLE_TEAM_ID` und
+`APPLE_APP_SPECIFIC_PASSWORD` oder die entsprechenden App Store Connect
+API-Zugangsdaten hinzu. Der Build würde anschließend mit Developer ID
+signiert, zur Notarisierung eingereicht und das Ticket am DMG angeheftet.
+Für Windows lässt sich eine Authenticode-Signatur mit einem
+Code-Signing-Zertifikat oder den Zugangsdaten eines Signierdienstes ergänzen.

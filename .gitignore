@@ -31,3 +31,7 @@ legacy/
 .DS_Store
 .idea/
 .vscode/
+
+# Release packaging
+*.dmg
+*.iconset/

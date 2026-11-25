@@ -1,10 +1,8 @@
 // Übersicht: Status, Start/Abbruch, Live-Fortschritt, Kennzahlen, Kurse, zuletzt geladene Dateien.
-import { h, button, iconButton, fmtRelative, fmtDayTime, fmtBytes, fmtNumber, fmtClock, plural, parseDate, runDurationSeconds, TRIGGER_LABEL, resultPill, debounce } from '../util.js';
+import { h, button, iconButton, fmtRelative, fmtDayTime, fmtBytes, fmtNumber, fmtClock, plural, parseDate, runDurationSeconds, TRIGGER_LABEL, resultPill, debounce, REVEAL_LABEL } from '../util.js';
 import { icon, fileKind } from '../icons.js';
 import { LogView, notice } from '../components.js';
-
-const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
-const REVEAL_LABEL = IS_MAC ? 'Im Finder zeigen' : 'Im Ordner zeigen';
+import { openSyncOptions } from './sync-options.js';
 
 // ------------------------------------------------------------------ Zustand ableiten
 
@@ -138,6 +136,19 @@ export function mount(root, ctx) {
   const statusNext = h('p', { class: 'status-next' });
   const semester = h('span', { class: 'badge', title: 'Aktuelles Semester' });
   const syncBtn = button('Jetzt synchronisieren', { icon: 'sync', variant: 'primary', size: 'lg', onclick: () => actions.startSync(false) });
+  const moreBtn = h(
+    'button',
+    {
+      type: 'button',
+      class: 'btn btn-primary btn-lg split-toggle',
+      'aria-label': 'Erweiterter Sync …',
+      title: 'Erweiterter Sync: einzelner Kurs, Semester, Ordnertiefe, sichtbarer Browser …',
+      'aria-haspopup': 'dialog',
+      onclick: () => openSyncOptions(ctx, { opener: moreBtn }),
+    },
+    icon('sliders', { size: 17 }),
+  );
+  const syncGroup = h('div', { class: 'split-btn', role: 'group', 'aria-label': 'Synchronisieren' }, syncBtn, moreBtn);
   const dryBtn = button('Probelauf', {
     icon: 'flask',
     variant: 'secondary',
@@ -150,7 +161,7 @@ export function mount(root, ctx) {
     { class: 'card status-card', 'aria-labelledby': 'status-title' },
     statusIcon,
     h('div', { class: 'status-text', 'aria-live': 'polite', 'aria-atomic': 'true' }, h('div', { class: 'status-title-row' }, statusTitle, semester), statusSub, statusNext),
-    h('div', { class: 'status-actions' }, syncBtn, dryBtn, cancelBtn),
+    h('div', { class: 'status-actions' }, syncGroup, dryBtn, cancelBtn),
   );
   statusTitle.id = 'status-title';
 
@@ -251,10 +262,15 @@ export function mount(root, ctx) {
     semester.hidden = !sem;
 
     const running = Boolean(status.running);
-    syncBtn.disabled = running;
+    const installing = Boolean(store.browser?.installing);
+    syncBtn.disabled = running || installing;
+    moreBtn.disabled = running || installing;
+    dryBtn.disabled = installing;
     syncBtn.querySelector('.btn-label').textContent = running ? 'Synchronisiert …' : 'Jetzt synchronisieren';
     syncBtn.querySelector('.icon').classList.toggle('spin', running);
     dryBtn.hidden = running;
+    moreBtn.hidden = running;
+    syncGroup.classList.toggle('is-single', running);
     cancelBtn.hidden = !running;
 
     if (running) {
@@ -303,6 +319,37 @@ export function mount(root, ctx) {
           actions: [button('Erneut versuchen', { icon: 'sync', variant: 'secondary', onclick: () => actions.startSync(false) })],
         }),
       );
+    } else if (store.browser?.installing) {
+      items.push(
+        notice({
+          tone: 'info',
+          iconName: 'browser',
+          title: 'Browser-Komponente wird installiert …',
+          text: 'ILIAS Sync lädt einmalig Chromium herunter (ca. 150 MB). Den Fortschritt siehst du im Protokoll.',
+        }),
+      );
+    } else if (actions.browserMissing()) {
+      items.push(
+        notice({
+          tone: 'danger',
+          iconName: 'browser',
+          title: 'Browser-Komponente fehlt',
+          text: store.browser.error
+            ? `${store.browser.error} Bitte erneut versuchen.`
+            : 'ILIAS Sync meldet sich mit einem eigenen Chromium bei ILIAS an. Einmal installieren (ca. 150 MB, wenige Minuten) – danach klappt die Synchronisierung.',
+          actions: [
+            button('Jetzt installieren', {
+              icon: 'download',
+              variant: 'primary',
+              onclick: () => {
+                panelOpen = true;
+                actions.installBrowser();
+                updateRunPanel();
+              },
+            }),
+          ],
+        }),
+      );
     } else if (!status.running && last?.result === 'failed' && last.message) {
       items.push(notice({ tone: 'danger', iconName: 'error', title: 'Der letzte Lauf ist fehlgeschlagen', text: last.message }));
     }
@@ -313,7 +360,7 @@ export function mount(root, ctx) {
           iconName: 'key',
           title: 'Keine Zugangsdaten gespeichert',
           text: 'Ohne gespeicherte Zugangsdaten kann sich ILIAS Sync nicht selbst neu anmelden, wenn die Sitzung abläuft.',
-          actions: [button('Zugangsdaten hinterlegen', { variant: 'secondary', onclick: () => ctx.navigate('einstellungen') })],
+          actions: [button('Einrichtung fortsetzen', { variant: 'primary', onclick: () => ctx.navigate('einrichtung') })],
         }),
       );
     }
@@ -381,7 +428,11 @@ export function mount(root, ctx) {
       progress.hidden = false;
       runElapsed.textContent = fmtClock(runDurationSeconds(lastFinished) ?? 0);
     } else {
-      runLabel.replaceChildren(icon('book', { size: 15 }), h('strong', {}, 'Protokoll'), h('span', { class: 'muted' }, ' · letzte Ausgaben'));
+      runLabel.replaceChildren(
+        icon(store.browser?.installing ? 'sync' : 'book', { size: 15, className: store.browser?.installing ? 'spin' : '' }),
+        h('strong', {}, store.browser?.installing ? 'Installation' : 'Protokoll'),
+        h('span', { class: 'muted' }, store.browser?.installing ? ' · Browser-Komponente (Chromium)' : ' · letzte Ausgaben'),
+      );
       progress.hidden = true;
       runElapsed.textContent = '';
     }
@@ -565,6 +616,10 @@ export function mount(root, ctx) {
   cleanups.push(
     store.on('status', updateStatus),
     store.on('runs', updateCourses),
+    store.on('browser', (b) => {
+      if (b?.installing) panelOpen = true;
+      updateStatus();
+    }),
     store.on('files', () => {
       updateFilterOptions();
       updateFiles();

@@ -68,14 +68,7 @@ def configure(
     contents = plistlib.dumps(
         {
             "Label": LABEL,
-            "ProgramArguments": [
-                sys.executable,
-                "-m",
-                "ilias_sync",
-                "run",
-                "--trigger",
-                "schedule",
-            ],
+            "ProgramArguments": paths.cli_command("run", "--trigger", "schedule"),
             "StartCalendarInterval": {"Hour": hour, "Minute": minute},
             "RunAtLoad": run_at_login,
             "StandardOutPath": os.devnull,
