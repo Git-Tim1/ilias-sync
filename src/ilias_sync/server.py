@@ -474,6 +474,19 @@ def create_app(runner: SyncRunner | None = None) -> FastAPI:
 
     @app.post("/api/setup/complete")
     def setup_complete() -> dict[str, bool]:
+        # Ohne Zugangsdaten kann ILIAS Sync nichts abrufen: die Einrichtung
+        # lässt sich erst abschließen, wenn sie im Schlüsselbund liegen.
+        with credentials_lock:
+            try:
+                username = auth.credential_username(credential_service())
+            except (KeyringError, UnicodeError):
+                raise keyring_unavailable() from None
+        if not username:
+            raise ApiError(
+                409,
+                "credentials_missing",
+                "Bitte zuerst deine ILIAS-Zugangsdaten speichern.",
+            )
         with config_lock:
             if not paths.CONFIG.exists():
                 save_config(load_config())

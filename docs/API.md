@@ -56,7 +56,7 @@ Feld auslassen. Der Verlauf behält die letzten 500 Läufe.
 
 | Methode | Pfad | Beschreibung |
 |---|---|---|
-| GET | `/api/status` | `{"running": bool, "current": RunReport\|null, "last_run": RunReport\|null, "session": {"state": "valid"\|"expired"\|"unknown", "checked_at": "…"\|null}, "credentials_configured": bool, "setup": {"completed": bool, "required": bool}, "schedule": Schedule, "version": "0.2.0"}` |
+| GET | `/api/status` | `{"running": bool, "current": RunReport\|null, "last_run": RunReport\|null, "session": {"state": "valid"\|"expired"\|"unknown", "checked_at": "…"\|null}, "credentials_configured": bool, "setup": {"completed": bool, "required": bool}, "schedule": Schedule, "version": "0.2.1"}` |
 | POST | `/api/sync` | Body `SyncOptions` (alle Felder optional) → `202 {"run_id": "…"}`; `409 {"error":"already_running"}`; `422 {"error":"invalid_sync_options","fields":{…}}` |
 | POST | `/api/sync/cancel` | Laufenden Sync abbrechen → `200 {"cancelled": true}` |
 | GET | `/api/runs?limit=20` | Verlauf, neuester zuerst → `[RunReport]` |
@@ -73,7 +73,7 @@ Feld auslassen. Der Verlauf behält die letzten 500 Läufe.
 | GET | `/api/paths` | Speicherorte (wie `ilias-sync config path`) → `{"config": {"path","exists"}, "data": {…}, "logs": {…}}` |
 | POST | `/api/paths/reveal` | Body `{"which": "config" \| "data" \| "logs"}` → zeigt die Config-Datei im Finder bzw. öffnet den Ordner (legt ihn bei Bedarf an) |
 | GET | `/api/setup/suggestions` | `{"download_dirs": [{"id","label","description","path","kind": "local"\|"cloud","exists"}], "defaults": Config}` – erster Eintrag ist immer `documents` |
-| POST | `/api/setup/complete` | Einrichtung abschließen (legt bei Bedarf die Config-Datei an) → `{"completed": true, "required": false}` |
+| POST | `/api/setup/complete` | Einrichtung abschließen (legt bei Bedarf die Config-Datei an) → `{"completed": true, "required": false}`. Ohne gespeicherte Zugangsdaten `409` mit `error: "credentials_missing"`, bei nicht erreichbarem Schlüsselbund `500` mit `error: "keyring_unavailable"`. |
 | POST | `/api/setup/reset` | Einrichtung erneut anbieten → `{"completed": false, "required": bool}` |
 | PUT | `/api/config` | Teil-Update von `Config`; validiert; `422` mit `{"error":"invalid_config","message":…,"fields":{"feld":"Fehlertext"}}` |
 | GET | `/api/credentials` | `{"configured": bool, "username": "ab***z" \| null}` (maskiert) |

@@ -67,7 +67,7 @@ def test_status_and_duplicate_start(client: TestClient) -> None:
         "credentials_configured": True,
         "setup": {"completed": False, "required": False},
         "schedule": {"supported": False, "instructions": "Test"},
-        "version": "0.2.0",
+        "version": "0.2.1",
     }
     started = client.post("/api/sync", json={"dry_run": True, "course": None})
     assert started.status_code == 202
@@ -235,6 +235,16 @@ def test_setup_flow_and_suggestions(
     }
     assert client.get("/api/status").json()["setup"]["completed"] is True
     client.post("/api/setup/reset")
+    assert client.get("/api/status").json()["setup"]["completed"] is False
+
+
+def test_setup_complete_requires_credentials(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("ilias_sync.auth.credential_username", lambda service: None)
+    response = client.post("/api/setup/complete")
+    assert response.status_code == 409
+    assert response.json()["error"] == "credentials_missing"
     assert client.get("/api/status").json()["setup"]["completed"] is False
 
 

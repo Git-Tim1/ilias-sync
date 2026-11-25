@@ -351,7 +351,7 @@ export function createMockApi(params = new URLSearchParams()) {
     credentials_configured: db.credentials.configured,
     setup: { completed: db.setupCompleted, required: !db.setupCompleted && !db.credentials.configured },
     schedule: db.schedule,
-    version: '0.2.0',
+    version: '0.2.1',
   });
   const emitStatus = () => emit('status', status());
 
@@ -658,6 +658,7 @@ export function createMockApi(params = new URLSearchParams()) {
       }),
     async completeSetup() {
       await delay();
+      if (!db.credentials.configured) throw new ApiError(409, { error: 'credentials_missing', message: 'Bitte zuerst deine ILIAS-Zugangsdaten speichern.' });
       db.setupCompleted = true;
       emitStatus();
       return { completed: true, required: false };

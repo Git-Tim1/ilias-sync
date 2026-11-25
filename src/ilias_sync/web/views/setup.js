@@ -136,7 +136,7 @@ export function mount(root, ctx) {
     step = Math.max(0, Math.min(STEPS.length - 1, index));
     renderStepper();
     backBtn.hidden = step === 0;
-    skipBtn.hidden = step === STEPS.length - 1;
+    updateSkip();
     nextBtn.disabled = false;
     const key = STEPS[step].key;
     stepBody.replaceChildren(renderStep(key));
@@ -149,6 +149,12 @@ export function mount(root, ctx) {
       announce(`Schritt ${step + 1} von ${STEPS.length}: ${STEPS[step].title}`);
     }
     card.scrollIntoView?.({ block: 'start' });
+  }
+
+  // Ohne gespeicherte Zugangsdaten gibt es kein „Später einrichten“:
+  // ILIAS Sync kann sonst nichts abrufen.
+  function updateSkip() {
+    skipBtn.hidden = step === STEPS.length - 1 || !data?.credentials.configured;
   }
 
   function updateNextLabel() {
@@ -231,6 +237,7 @@ export function mount(root, ctx) {
       onChange: (c) => {
         data.credentials = c;
         updateNextLabel();
+        updateSkip();
       },
     });
     const onInput = () => updateNextLabel();
@@ -240,7 +247,7 @@ export function mount(root, ctx) {
       'Bei ILIAS anmelden',
       data.credentials.configured
         ? 'Es sind bereits Zugangsdaten gespeichert. Du kannst sie hier ersetzen oder einfach weitergehen.'
-        : 'Mit deiner Uni-Kennung meldet sich ILIAS Sync selbst neu an, wenn die Sitzung abläuft.',
+        : 'Ohne Zugangsdaten kann ILIAS Sync nichts abrufen. Mit deiner Uni-Kennung meldet es sich außerdem selbst neu an, wenn die Sitzung abläuft.',
       blocks.creds.el,
     );
   }
@@ -528,6 +535,11 @@ export function mount(root, ctx) {
   }
 
   async function finish(done) {
+    if (!data?.credentials.configured) {
+      ctx.toast('Bitte zuerst deine ILIAS-Zugangsdaten speichern.', { tone: 'danger' });
+      go(STEPS.findIndex((s) => s.key === 'credentials'));
+      return;
+    }
     try {
       await api.completeSetup();
       await ctx.refreshStatus().catch(() => {});
