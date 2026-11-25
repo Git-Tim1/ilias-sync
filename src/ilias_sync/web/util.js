@@ -239,20 +239,6 @@ export async function chooseFolder(initial) {
   }
 }
 
-/** Dateiauswahl (alte config.yaml) über das Desktop-Fenster, falls verfügbar. */
-export function hasNativeFilePicker() {
-  return Boolean(window.pywebview?.api?.choose_file);
-}
-
-export async function chooseFile(initial) {
-  if (!hasNativeFilePicker()) return null;
-  try {
-    return (await window.pywebview.api.choose_file(initial ?? null)) || null;
-  } catch {
-    return null;
-  }
-}
-
 /** Öffnet die Oberfläche im Standardbrowser (im Desktop-Fenster über pywebview). */
 export async function openInBrowser(url = location.href) {
   if (window.pywebview?.api?.open_in_browser) {

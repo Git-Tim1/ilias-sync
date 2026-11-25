@@ -594,25 +594,6 @@ export function createMockApi(params = new URLSearchParams()) {
     getConfig: () => respond(db.config),
     getConfigDefaults: () => respond(DEFAULT_CONFIG),
     getConfigYaml: () => respond({ path: PATHS.config.path, exists: PATHS.config.exists, yaml: toYaml(db.config) }),
-    async importConfig(path) {
-      await delay(300);
-      const p = String(path ?? '').trim();
-      if (!/^(\/|~)/.test(p)) throw new ApiError(422, { error: 'invalid_path', message: 'Bitte einen absoluten Dateipfad angeben.' });
-      if (!/\.ya?ml$/i.test(p)) throw new ApiError(422, { error: 'invalid_path', message: 'Bitte eine YAML-Datei (.yaml oder .yml) auswählen.' });
-      if (/fehlt|missing/i.test(p)) throw new ApiError(404, { error: 'file_not_found', message: 'Die Datei wurde nicht gefunden.' });
-      db.config = {
-        ...db.config,
-        download_dir: '~/Documents/ILIAS Downloads',
-        auto_discover_current_semester: false,
-        include_configured_courses: true,
-        auto_login: false,
-        max_depth: 3,
-        semester_filter: 'WS26/27',
-        courses: Object.fromEntries(COURSES.slice(0, 3).map((c) => [c.name, courseUrl(c)])),
-      };
-      PATHS.config.exists = true;
-      return structuredClone(db.config);
-    },
     getPaths: () => respond(PATHS),
     revealPath: (which) => respond({ opened: which }),
     async getShellCommand() {

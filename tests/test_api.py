@@ -398,38 +398,6 @@ def test_paths_yaml_and_reveal(
     assert bad.status_code == 422
 
 
-def test_config_import(client: TestClient, tmp_path: Path) -> None:
-    legacy = tmp_path / "old" / "config.yaml"
-    legacy.parent.mkdir()
-    legacy.write_text(
-        "download_dir: Kurse\n"
-        "current_semester: WS26/27\n"
-        "courses:\n"
-        "  Mathe: https://www.ilias.uni-koeln.de/ilias/goto.php/crs/1\n"
-        "unknown_key: ignored\n",
-        encoding="utf-8",
-    )
-    imported = client.post("/api/config/import", json={"path": str(legacy)})
-    assert imported.status_code == 200
-    data = imported.json()
-    assert data["download_dir"] == str((legacy.parent / "Kurse").resolve())
-    assert data["semester_filter"] == "WS26/27"
-    assert data["auto_discover_current_semester"] is False
-    assert client.get("/api/config").json() == data
-    for path, status in (
-        ("relative.yaml", 422),
-        (str(tmp_path / "missing.yaml"), 404),
-        (str(tmp_path / "notes.txt"), 422),
-    ):
-        response = client.post("/api/config/import", json={"path": path})
-        assert response.status_code == status
-    broken = tmp_path / "broken.yaml"
-    broken.write_text("courses: [unclosed", encoding="utf-8")
-    response = client.post("/api/config/import", json={"path": str(broken)})
-    assert response.status_code == 422
-    assert response.json()["error"] == "invalid_config"
-
-
 def test_browser_endpoints(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

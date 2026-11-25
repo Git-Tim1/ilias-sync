@@ -2789,10 +2789,6 @@ a:hover {
   white-space: pre;
 }
 
-.import-block .setting-row {
-  border-top: 1px solid var(--border);
-}
-
 .browser-block {
   display: flex;
   flex-direction: column;

@@ -69,7 +69,6 @@ Feld auslassen. Der Verlauf behält die letzten 500 Läufe.
 | GET | `/api/config` | Konfiguration → `Config` (siehe unten) |
 | GET | `/api/config/defaults` | Standardwerte → `Config` (ohne gespeicherte Änderungen) |
 | GET | `/api/config/yaml` | Wirksame Konfiguration als YAML (wie `ilias-sync config show`) → `{"path": "…", "exists": bool, "yaml": "…"}` |
-| POST | `/api/config/import` | Body `{"path": "/abs/alte/config.yaml"}` → übernimmt eine alte `config.yaml` (wie `ilias-sync config import`) und liefert die neue `Config`. `422 invalid_path` (nicht absolut / keine `.yaml`/`.yml`), `404 file_not_found`, `422 invalid_config` (nicht lesbar/ungültig). Ersetzt die gesamte Konfiguration. |
 | GET | `/api/paths` | Speicherorte (wie `ilias-sync config path`) → `{"config": {"path","exists"}, "data": {…}, "logs": {…}}` |
 | POST | `/api/paths/reveal` | Body `{"which": "config" \| "data" \| "logs"}` → zeigt die Config-Datei im Finder bzw. öffnet den Ordner (legt ihn bei Bedarf an) |
 | GET | `/api/setup/suggestions` | `{"download_dirs": [{"id","label","description","path","kind": "local"\|"cloud","exists"}], "defaults": Config}` – erster Eintrag ist immer `documents` |
@@ -162,5 +161,4 @@ Im Browser fehlen diese Funktionen; die Oberfläche zeigt dann Texteingaben.
 | Funktion | Rückgabe |
 |---|---|
 | `choose_folder(initial)` | gewählter Ordnerpfad oder `null` |
-| `choose_file(initial)` | gewählte Datei (`.yaml`/`.yml`) oder `null` |
 | `open_in_browser(url)` | `true`, wenn die lokale Adresse (`http://127.0.0.1:…`) im Standardbrowser geöffnet wurde |

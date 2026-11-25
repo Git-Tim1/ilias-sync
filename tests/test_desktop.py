@@ -22,24 +22,8 @@ def test_desktop_shows_error_when_status_unavailable(monkeypatch):
     assert "nicht rechtzeitig" in windows[0]["html"]
 
 
-def test_desktop_file_dialog_and_browser(monkeypatch, tmp_path):
-    import pytest
-
-    parse_file_type = pytest.importorskip("webview.util").parse_file_type
-    for file_type in desktop.FILE_TYPES:
-        parse_file_type(file_type)  # pywebview rejects invalid filters
-    calls = []
-    legacy = tmp_path / "config.yaml"
-    legacy.touch()
-    window = SimpleNamespace(
-        create_file_dialog=lambda *args, **kwargs: calls.append(kwargs) or [str(legacy)]
-    )
+def test_desktop_open_in_browser(monkeypatch):
     api = desktop._DesktopApi()
-    assert api.choose_file() is None
-    api.bind(window)
-    assert api.choose_file(str(legacy)) == str(legacy)
-    assert calls[0]["directory"] == str(tmp_path)
-    assert calls[0]["file_types"] == desktop.FILE_TYPES
     opened = []
     monkeypatch.setattr(
         desktop.webbrowser, "open", lambda url: opened.append(url) or True

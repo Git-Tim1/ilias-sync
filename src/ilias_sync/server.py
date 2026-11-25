@@ -32,7 +32,6 @@ from .config import (
     DEFAULT_KEYCHAIN_SERVICE,
     Config,
     ConfigError,
-    import_legacy_config,
     load_config,
     save_config,
     validate_config,
@@ -99,10 +98,6 @@ def invalid_sync(fields: dict[str, str]) -> ApiError:
     error = ApiError(422, "invalid_sync_options", "Bitte prüfe die Sync-Optionen.")
     error.body["fields"] = fields
     return error
-
-
-class ImportRequest(BaseModel):
-    path: str
 
 
 class RevealRequest(BaseModel):
@@ -505,31 +500,6 @@ def create_app(runner: SyncRunner | None = None) -> FastAPI:
             "exists": paths.CONFIG.exists(),
             "yaml": yaml.safe_dump(config, allow_unicode=True, sort_keys=False),
         }
-
-    @app.post("/api/config/import")
-    def import_config(body: ImportRequest) -> dict[str, Any]:
-        try:
-            source = Path(body.path.strip()).expanduser()
-            if "\x00" in body.path or not source.is_absolute():
-                raise ValueError()
-        except (ValueError, RuntimeError):
-            raise ApiError(
-                422, "invalid_path", "Bitte einen absoluten Dateipfad angeben."
-            ) from None
-        if source.suffix.lower() not in {".yaml", ".yml"}:
-            raise ApiError(
-                422,
-                "invalid_path",
-                "Bitte eine YAML-Datei (.yaml oder .yml) auswählen.",
-            )
-        if not source.is_file():
-            raise ApiError(404, "file_not_found", "Die Datei wurde nicht gefunden.")
-        with config_lock:
-            previous = credential_service()
-            config = import_legacy_config(source)
-            if config.keychain_service != previous:
-                refresh_credentials(config.keychain_service)
-        return config.to_dict()
 
     def runtime_paths() -> dict[str, Path]:
         return {"config": paths.CONFIG, "data": paths.DATA, "logs": paths.LOGS}

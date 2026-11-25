@@ -29,8 +29,6 @@ STARTUP_ERROR = (
     "auf /api/status geantwortet."
 )
 
-FILE_TYPES = ("YAML Dateien (*.yaml;*.yml)", "Alle Dateien (*.*)")
-
 INSTALL_HINT = "pip install 'ilias-sync[desktop]'"
 
 
@@ -118,26 +116,6 @@ class _DesktopApi:
             if path.is_dir():
                 kwargs["directory"] = str(path)
         result = self._window.create_file_dialog(folder_dialog, **kwargs)
-        return _first_path(result)
-
-    def choose_file(self, initial: str | None = None) -> str | None:
-        """Öffnet einen nativen Dateiauswahl-Dialog für YAML-Dateien."""
-        if self._window is None:
-            return None
-        import webview
-
-        open_dialog = getattr(getattr(webview, "FileDialog", None), "OPEN", None)
-        if open_dialog is None:  # pywebview < 5
-            open_dialog = webview.OPEN_DIALOG
-        kwargs: dict[str, Any] = {"file_types": FILE_TYPES}
-        if initial:
-            from pathlib import Path
-
-            path = Path(initial).expanduser()
-            directory = path if path.is_dir() else path.parent
-            if directory.is_dir():
-                kwargs["directory"] = str(directory)
-        result = self._window.create_file_dialog(open_dialog, **kwargs)
         return _first_path(result)
 
     def open_in_browser(self, url: str) -> bool:

@@ -129,7 +129,6 @@ export function createHttpApi() {
     resetSetup: () => post('api/setup/reset'),
     putConfig: (partial) => put('api/config', partial),
     getConfigYaml: () => get('api/config/yaml'),
-    importConfig: (path) => post('api/config/import', { path }),
     getPaths: () => get('api/paths'),
     revealPath: (which) => post('api/paths/reveal', { which }),
     getShellCommand: () => get('api/shell-command'),

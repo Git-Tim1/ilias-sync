@@ -55,7 +55,7 @@ etwa 150 bis 200 MB. Du kannst ihn auch in den Einstellungen starten.
 
 ## Alles auch ohne Terminal
 
-**Alles auch ohne Terminal:** Jede Option von `ilias-sync run` steckt im Dialog „Erweiterter Sync“ (Knopf neben „Jetzt synchronisieren“), z. B. einzelner Kurs, anderes Semester, Ordnertiefe oder sichtbarer Browser. Der Dialog zeigt den passenden Terminal-Befehl an. Unter Einstellungen → Erweitert findest du die Speicherorte, die Konfiguration als YAML, den Import einer alten `config.yaml` und die Installation der Browser-Komponente.
+**Alles auch ohne Terminal:** Jede Option von `ilias-sync run` steckt im Dialog „Erweiterter Sync“ (Knopf neben „Jetzt synchronisieren“), z. B. einzelner Kurs, anderes Semester, Ordnertiefe oder sichtbarer Browser. Der Dialog zeigt den passenden Terminal-Befehl an. Unter Einstellungen → Erweitert findest du die Speicherorte, die Konfiguration als YAML und die Installation der Browser-Komponente.
 
 ## Kommandozeile (CLI)
 
@@ -110,7 +110,7 @@ Weitere Optionen zeigt beispielsweise `ilias-sync run --help`.
 | `ilias-sync login` | — |
 | `ilias-sync serve` | — |
 | `ilias-sync app` | — |
-| `ilias-sync config` | `path`, `show`, `import` |
+| `ilias-sync config` | `path`, `show` |
 | `ilias-sync credentials` | `set`, `delete` |
 | `ilias-sync schedule` | `enable`, `disable`, `status` |
 | `ilias-sync browser` | `status`, `install` |
@@ -120,13 +120,6 @@ Oberfläche und Zeitplan starten Synchronisierungen über dieselbe CLI. Der
 lokale HTTP-Server der Desktop-App läuft nur, solange das Fenster offen ist.
 Der Zeitplan funktioniert auch bei geschlossenem Fenster. Mit
 `ilias-sync serve` kannst du den Server separat starten.
-
-## Umstieg vom alten Skript
-
-`ilias-sync config import <alte config.yaml>` übernimmt die bisherige Konfiguration.
-Auf macOS verwendet ILIAS Sync die vorhandenen Schlüsselbund-Zugangsdaten
-mit dem importierten Dienstnamen weiter. Der Standarddienst ist
-`ilias-koeln-sync`. Melde dich einmal im neuen Browserprofil an.
 
 ## Zeitplan
 

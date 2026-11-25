@@ -207,27 +207,3 @@ def save_config(config: Config) -> None:
         paths.CONFIG,
         yaml.safe_dump(config.to_dict(), allow_unicode=True, sort_keys=False),
     )
-
-
-def import_legacy_config(path: Path) -> Config:
-    raw = read_yaml(path)
-    data = {
-        key: value for key, value in raw.items() if key in Config.__dataclass_fields__
-    }
-    data.setdefault("auto_discover_current_semester", False)
-    data.setdefault("include_configured_courses", True)
-    data.setdefault("auto_login", False)
-    data.setdefault("max_depth", 3)
-    data["keychain_service"] = data.get("keychain_service") or DEFAULT_KEYCHAIN_SERVICE
-    data.setdefault("download_dir", "ILIAS Downloads")
-    data["semester_filter"] = (
-        data.get("semester_filter") or raw.get("current_semester") or "auto"
-    )
-    data["courses"] = data.get("courses") or {}
-    data["file_extensions"] = data.get("file_extensions") or EXTENSIONS
-    data["local_download_dir"] = data.get("local_download_dir") or None
-    config = validate_config(
-        data, relative_to=path.resolve().parent, allow_root_only=True
-    )
-    save_config(config)
-    return config

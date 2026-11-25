@@ -1,5 +1,5 @@
 // Einstellungen: Konfiguration, Zugangsdaten, Zeitplan, Ordner.
-import { h, button, iconButton, REVEAL_LABEL, hasNativeFilePicker, chooseFile, openInBrowser } from '../util.js';
+import { h, button, iconButton, REVEAL_LABEL, openInBrowser } from '../util.js';
 import { icon } from '../icons.js';
 import { settingRow, switchInput, nextId, chipsInput, showFieldErrors, clearFieldErrors } from '../components.js';
 import { errorMessage } from '../api.js';
@@ -353,7 +353,7 @@ export function mount(root, ctx) {
         shellCommandCard(),
         h('div', { class: 'subsection' }, h('h3', { class: 'subhead' }, 'Browser-Komponente'), h('p', { class: 'setting-desc' }, 'ILIAS Sync nutzt ein eigenes Chromium für Anmeldung und Downloads.'), browser.el),
         h('div', { class: 'subsection' }, h('h3', { class: 'subhead' }, 'Speicherorte'), pathsList()),
-        h('div', { class: 'subsection' }, h('h3', { class: 'subhead' }, 'Konfigurationsdatei'), yamlViewer(), importer()),
+        h('div', { class: 'subsection' }, h('h3', { class: 'subhead' }, 'Konfigurationsdatei'), yamlViewer()),
         h(
           'div',
           { class: 'setting-row' },
@@ -518,76 +518,6 @@ export function mount(root, ctx) {
       );
     }
 
-    function importer() {
-      const errors = new Map();
-      const id = nextId('import');
-      const input = h('input', { id, class: 'input input-path', type: 'text', placeholder: '/Pfad/zur/alten/config.yaml', spellcheck: 'false', autocomplete: 'off' });
-      const pick = button('Datei wählen …', {
-        icon: 'folder',
-        variant: 'secondary',
-        size: 'sm',
-        onclick: async () => {
-          const path = await chooseFile(input.value);
-          if (path) {
-            input.value = path;
-            ask();
-          }
-        },
-      });
-      pick.hidden = !hasNativeFilePicker();
-      const onReady = () => (pick.hidden = !hasNativeFilePicker());
-      window.addEventListener('pywebviewready', onReady);
-      cleanups.push(() => window.removeEventListener('pywebviewready', onReady));
-      const confirmBox = h('div', { class: 'confirm', hidden: true, role: 'alertdialog', 'aria-label': 'Konfiguration importieren?' });
-      const importBtn = button('Importieren …', { icon: 'upload', variant: 'secondary', size: 'sm', onclick: () => ask() });
-
-      function ask() {
-        clearFieldErrors(errors);
-        if (!input.value.trim()) {
-          showFieldErrors(errors, { import: 'Bitte den Pfad zur alten config.yaml angeben.' });
-          return;
-        }
-        confirmBox.hidden = false;
-        confirmBox.replaceChildren(
-          h('span', {}, 'Alle Einstellungen werden durch die Werte aus der Datei ersetzt. Zugangsdaten im Schlüsselbund bleiben erhalten.'),
-          button('Abbrechen', { variant: 'secondary', size: 'sm', onclick: () => ((confirmBox.hidden = true), importBtn.focus()) }),
-          button('Ersetzen', { variant: 'primary', size: 'sm', onclick: () => run() }),
-        );
-        confirmBox.querySelector('.btn-secondary').focus();
-      }
-
-      async function run() {
-        confirmBox.hidden = true;
-        try {
-          await api.importConfig(input.value.trim());
-          ctx.toast('Alte Konfiguration übernommen.', { tone: 'success' });
-          await load();
-        } catch (err) {
-          const fields = err.fields ? { import: Object.values(err.fields).join(' ') } : { import: errorMessage(err) };
-          showFieldErrors(errors, fields);
-        }
-      }
-      input.addEventListener('keydown', (ev) => {
-        if (ev.key === 'Enter') {
-          ev.preventDefault();
-          ask();
-        }
-      });
-      return h(
-        'div',
-        { class: 'import-block' },
-        settingRow({
-          label: 'Alte config.yaml importieren',
-          description: 'Übernimmt Ordner, Kurse und Dateitypen aus einer früheren Installation (wie „ilias-sync config import“).',
-          control: h('div', { class: 'path-field' }, input, pick, importBtn),
-          forId: id,
-          stacked: true,
-          errorKey: 'import',
-          errors,
-        }),
-        confirmBox,
-      );
-    }
 
     body.removeAttribute('aria-busy');
     body.replaceChildren(

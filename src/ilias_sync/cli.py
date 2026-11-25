@@ -16,7 +16,7 @@ from pathlib import Path
 from keyring.errors import KeyringError
 
 from . import auth, browser, notifications, paths, schedule, shell_command
-from .config import ConfigError, import_legacy_config, load_config, validate_config
+from .config import ConfigError, load_config, validate_config
 from .crawler import CrawlConfig, IliasUnreachableError, SessionExpiredError, run_sync
 from .reports import RunReport, now_iso
 from .runner import (
@@ -66,7 +66,6 @@ def parser() -> argparse.ArgumentParser:
     config = commands.add_parser("config").add_subparsers(dest="action", required=True)
     config.add_parser("path")
     config.add_parser("show")
-    config.add_parser("import").add_argument("file", type=Path)
     credentials = commands.add_parser("credentials").add_subparsers(
         dest="action", required=True
     )
@@ -242,11 +241,8 @@ def main() -> int:
         if args.command == "config":
             if args.action == "path":
                 print(paths.CONFIG)
-            elif args.action == "show":
-                print(json.dumps(load_config().to_dict(), ensure_ascii=False, indent=2))
             else:
-                import_legacy_config(args.file)
-                print(f"Konfiguration importiert: {paths.CONFIG}")
+                print(json.dumps(load_config().to_dict(), ensure_ascii=False, indent=2))
         if args.command == "credentials":
             if args.action == "set":
                 username = args.username or input("ILIAS-Benutzername: ").strip()
