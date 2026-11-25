@@ -24,9 +24,6 @@ logs/
 ILIAS Downloads/
 downloads/
 
-# Reference code (removed before publishing)
-legacy/
-
 # OS / Editor
 .DS_Store
 .idea/

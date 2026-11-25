@@ -16,7 +16,7 @@ dependencies = [
 
 [project.optional-dependencies]
 desktop = ["pywebview>=5"]
-dev = ["pytest", "httpx2", "ruff"]
+dev = ["pytest", "httpx2", "ruff>=0.17,<0.18"]
 
 packaging = ["pyinstaller>=6.12", "build", "dmgbuild; sys_platform == 'darwin'"]
 
@@ -30,5 +30,3 @@ path = "src/ilias_sync/__init__.py"
 [tool.hatch.build.targets.wheel]
 packages = ["src/ilias_sync"]
 
-[tool.ruff]
-exclude = ["legacy"]

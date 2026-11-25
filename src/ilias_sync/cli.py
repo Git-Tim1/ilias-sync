@@ -271,7 +271,9 @@ def main() -> int:
             if info["installed"]:
                 print(f"Terminal-Befehl installiert: {info['path']} → {info['target']}")
                 if info["path_line"]:
-                    print(f"Für zsh in ~/.zprofile ergänzen und ein neues Terminal öffnen:\n{info['path_line']}")
+                    print(
+                        f"Für zsh in ~/.zprofile ergänzen und ein neues Terminal öffnen:\n{info['path_line']}"
+                    )
             else:
                 print("Terminal-Befehl nicht installiert.")
         if args.command == "schedule":

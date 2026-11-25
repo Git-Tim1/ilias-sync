@@ -1,8 +1,8 @@
 # API-Vertrag (Backend ↔ Oberfläche)
 
 Dieser Vertrag ist verbindlich für Backend (`src/ilias_sync/server.py`) und
-Oberfläche (`src/ilias_sync/web/`). Änderungen nur in Absprache mit dem
-Orchestrator. Alle Antworten sind JSON (UTF-8), Zeitstempel ISO-8601 mit
+Oberfläche (`src/ilias_sync/web/`). Wer ihn ändert, passt Server, Oberfläche
+und Demo-Modus (`web/mock.js`) gemeinsam an. Alle Antworten sind JSON (UTF-8), Zeitstempel ISO-8601 mit
 Zeitzone (`2026-11-25T19:27:53+01:00`). Fehler: HTTP 4xx/5xx mit
 `{"error": "<code>", "message": "<deutscher Text>"}`.
 
@@ -14,7 +14,8 @@ Python-Einstiegspunkte (vom Desktop-Launcher genutzt):
 
 ```python
 from ilias_sync.server import create_app, run
-app = create_app()             # FastAPI-Instanz
+
+app = create_app()  # FastAPI-Instanz
 run(host="127.0.0.1", port=8765, open_browser=False)  # blockierend (uvicorn)
 ```
 
@@ -56,7 +57,7 @@ Feld auslassen. Der Verlauf behält die letzten 500 Läufe.
 
 | Methode | Pfad | Beschreibung |
 |---|---|---|
-| GET | `/api/status` | `{"running": bool, "current": RunReport\|null, "last_run": RunReport\|null, "session": {"state": "valid"\|"expired"\|"unknown", "checked_at": "…"\|null}, "credentials_configured": bool, "setup": {"completed": bool, "required": bool}, "schedule": Schedule, "version": "0.2.2"}` |
+| GET | `/api/status` | `{"running": bool, "current": RunReport\|null, "last_run": RunReport\|null, "session": {"state": "valid"\|"expired"\|"unknown", "checked_at": "…"\|null}, "credentials_configured": bool, "setup": {"completed": bool, "required": bool}, "schedule": Schedule, "version": "…"}` |
 | POST | `/api/sync` | Body `SyncOptions` (alle Felder optional) → `202 {"run_id": "…"}`; `409 {"error":"already_running"}`; `422 {"error":"invalid_sync_options","fields":{…}}` |
 | POST | `/api/sync/cancel` | Laufenden Sync abbrechen → `200 {"cancelled": true}` |
 | GET | `/api/runs?limit=20` | Verlauf, neuester zuerst → `[RunReport]` |

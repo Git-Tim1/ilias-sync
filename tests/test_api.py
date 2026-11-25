@@ -6,7 +6,7 @@ from time import monotonic, sleep
 import pytest
 from fastapi.testclient import TestClient
 
-from ilias_sync import paths
+from ilias_sync import __version__, paths
 from ilias_sync.config import Config, save_config
 from ilias_sync.reports import RunReport
 from ilias_sync.runner import AlreadyRunning, SyncOptions, SyncRunner
@@ -67,7 +67,7 @@ def test_status_and_duplicate_start(client: TestClient) -> None:
         "credentials_configured": True,
         "setup": {"completed": False, "required": False},
         "schedule": {"supported": False, "instructions": "Test"},
-        "version": "0.2.2",
+        "version": __version__,
     }
     started = client.post("/api/sync", json={"dry_run": True, "course": None})
     assert started.status_code == 202

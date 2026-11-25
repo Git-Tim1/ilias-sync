@@ -78,7 +78,7 @@ Mit Python 3.11 oder neuer kannst du das Wheel aus dem Release oder den
 Stand des Quellcode-Repos installieren:
 
 ```sh
-pipx install ./ilias_sync-0.2.2-py3-none-any.whl
+pipx install ./ilias_sync-<Version>-py3-none-any.whl
 # Alternativ direkt aus dem Repo
 pipx install git+https://github.com/Git-Tim1/ilias-sync
 ```
