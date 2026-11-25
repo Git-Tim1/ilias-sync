@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Laufzeit- und persoenliche Daten – niemals committen
+config.yaml
+*.state.json
+*-state.json
+storage_state*.json
+.ilias-browser-profile/
+.*-browser-profile/
+logs/
+*.log
+ILIAS Downloads/
+downloads/
+
+# Reference code (removed before publishing)
+legacy/
+
+# OS / Editor
+.DS_Store
+.idea/
+.vscode/
