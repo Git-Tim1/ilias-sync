@@ -56,7 +56,7 @@ Feld auslassen. Der Verlauf behält die letzten 500 Läufe.
 
 | Methode | Pfad | Beschreibung |
 |---|---|---|
-| GET | `/api/status` | `{"running": bool, "current": RunReport\|null, "last_run": RunReport\|null, "session": {"state": "valid"\|"expired"\|"unknown", "checked_at": "…"\|null}, "credentials_configured": bool, "setup": {"completed": bool, "required": bool}, "schedule": Schedule, "version": "0.2.1"}` |
+| GET | `/api/status` | `{"running": bool, "current": RunReport\|null, "last_run": RunReport\|null, "session": {"state": "valid"\|"expired"\|"unknown", "checked_at": "…"\|null}, "credentials_configured": bool, "setup": {"completed": bool, "required": bool}, "schedule": Schedule, "version": "0.2.2"}` |
 | POST | `/api/sync` | Body `SyncOptions` (alle Felder optional) → `202 {"run_id": "…"}`; `409 {"error":"already_running"}`; `422 {"error":"invalid_sync_options","fields":{…}}` |
 | POST | `/api/sync/cancel` | Laufenden Sync abbrechen → `200 {"cancelled": true}` |
 | GET | `/api/runs?limit=20` | Verlauf, neuester zuerst → `[RunReport]` |

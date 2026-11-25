@@ -351,7 +351,7 @@ export function createMockApi(params = new URLSearchParams()) {
     credentials_configured: db.credentials.configured,
     setup: { completed: db.setupCompleted, required: !db.setupCompleted && !db.credentials.configured },
     schedule: db.schedule,
-    version: '0.2.1',
+    version: '0.2.2',
   });
   const emitStatus = () => emit('status', status());
 

@@ -67,7 +67,7 @@ def test_status_and_duplicate_start(client: TestClient) -> None:
         "credentials_configured": True,
         "setup": {"completed": False, "required": False},
         "schedule": {"supported": False, "instructions": "Test"},
-        "version": "0.2.1",
+        "version": "0.2.2",
     }
     started = client.post("/api/sync", json={"dry_run": True, "course": None})
     assert started.status_code == 202
